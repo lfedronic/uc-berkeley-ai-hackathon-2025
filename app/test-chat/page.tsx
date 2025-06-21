@@ -1,6 +1,6 @@
 'use client';
 
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
 
 export default function TestChatPage() {
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
@@ -15,7 +15,7 @@ export default function TestChatPage() {
             Chat with Tool Calls
           </h1>
           <p className="text-lg text-gray-600">
-            Try asking me to print "yes" or "no" and I'll use the appropriate tool!
+            Try asking me to print &quot;yes&quot; or &quot;no&quot; and I&apos;ll use the appropriate tool!
           </p>
         </div>
 
@@ -24,13 +24,13 @@ export default function TestChatPage() {
           <div className="h-96 overflow-y-auto mb-6 space-y-4">
             {messages.length === 0 && (
               <div className="text-center text-gray-500 mt-8">
-                <p>No messages yet. Try asking me to print "yes" or "no"!</p>
+                <p>No messages yet. Try asking me to print &quot;yes&quot; or &quot;no&quot;!</p>
                 <div className="mt-4 space-y-2">
                   <p className="text-sm font-medium">Example prompts:</p>
                   <div className="text-sm text-gray-400">
-                    <p>• "Please print yes"</p>
-                    <p>• "Can you print no to the console?"</p>
-                    <p>• "I need a positive response - print yes"</p>
+                    <p>• &quot;Please print yes&quot;</p>
+                    <p>• &quot;Can you print no to the console?&quot;</p>
+                    <p>• &quot;I need a positive response - print yes&quot;</p>
                   </div>
                 </div>
               </div>
