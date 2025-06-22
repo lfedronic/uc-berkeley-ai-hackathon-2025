@@ -1,4 +1,4 @@
-import { Model, Actions, IJsonModel } from 'flexlayout-react';
+import { Model, Actions, DockLocation, IJsonModel } from 'flexlayout-react';
 
 /**
  * FlexLayout-native tool system
@@ -43,7 +43,9 @@ export function addTabToFlexLayout(
         config: { contentType: contentId, bgColor: getBgColorForContent(contentId) }
       },
       paneId,
-      makeActive ? 0 : -1 // 0 = make active, -1 = add to end
+      DockLocation.CENTER, // Add to existing tabset
+      makeActive ? 0 : -1, // 0 = make active, -1 = add to end
+      makeActive // Select the new tab if makeActive is true
     );
 
     model.doAction(action);
@@ -111,11 +113,8 @@ export function closeTabInFlexLayout(
       return { success: false, error: 'TAB_NOT_FOUND', message: `Tab ${tabId} not found` };
     }
 
-    // Check if this is the last tab in its tabset
-    const parent = tabNode.getParent();
-    if (parent && parent.getChildren().length <= 1) {
-      return { success: false, error: 'LAST_TAB', message: 'Cannot close the last tab in a pane' };
-    }
+    // Allow closing the last tab - this will remove the entire pane
+    // AI should have full control over layout management
 
     const action = Actions.deleteTab(tabId);
     model.doAction(action);
@@ -153,6 +152,9 @@ export function splitPaneInFlexLayout(
     const newTabsetId = `tabset-${Date.now()}`;
     const newTabId = `tab-${Date.now()}`;
     
+    // Map orientation to DockLocation
+    const dockLocation = orientation === 'row' ? DockLocation.RIGHT : DockLocation.BOTTOM;
+    
     const action = Actions.addNode(
       {
         type: 'tabset',
@@ -166,7 +168,9 @@ export function splitPaneInFlexLayout(
         }]
       },
       targetId,
-      0 // Add as first child
+      dockLocation, // Use proper DockLocation
+      0, // Index
+      false // Don't select
     );
 
     model.doAction(action);
