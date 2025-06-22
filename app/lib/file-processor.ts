@@ -5,6 +5,7 @@ import { promisify } from "util";
 // import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import { AssemblyAI } from "assemblyai";
+import { EmbeddingService } from "./embedding-service";
 
 const execAsync = promisify(exec);
 
@@ -83,6 +84,33 @@ export class FileProcessor {
 		} catch (error) {
 			console.error("Error creating files index:", error);
 			// Don't throw - this is not critical for the main functionality
+		}
+	}
+
+	private static async generateEmbeddings(folderPath: string): Promise<void> {
+		try {
+			const embeddingService = new EmbeddingService();
+			console.log(
+				`Generating embeddings for folder: ${path.basename(folderPath)}`
+			);
+
+			const embeddedChunks = await embeddingService.indexFolder(folderPath);
+
+			if (embeddedChunks.length > 0) {
+				await embeddingService.saveEmbeddingIndex(folderPath, embeddedChunks);
+				console.log(
+					`Generated ${embeddedChunks.length} embeddings for ${path.basename(
+						folderPath
+					)}`
+				);
+			} else {
+				console.log(
+					`No text files found to embed in ${path.basename(folderPath)}`
+				);
+			}
+		} catch (error) {
+			console.error("Error generating embeddings:", error);
+			// Don't throw - embeddings are optional, file processing should continue
 		}
 	}
 
@@ -277,6 +305,9 @@ export class FileProcessor {
 
 		// Create files.json index for easy access to text and image files
 		await this.createFilesIndex(folderPath);
+
+		// Generate embeddings for text files
+		await this.generateEmbeddings(folderPath);
 
 		// Processing summary removed per user request
 

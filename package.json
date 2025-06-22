@@ -6,10 +6,12 @@
 		"dev": "next dev --turbopack",
 		"build": "next build",
 		"start": "next start",
-		"lint": "next lint"
+		"lint": "next lint",
+		"test:embeddings": "tsx scripts/test-embeddings.ts"
 	},
 	"dependencies": {
 		"@ai-sdk/google": "^1.2.19",
+		"@ai-sdk/openai": "^1.3.22",
 		"@ai-sdk/react": "^1.2.12",
 		"@google/generative-ai": "^0.24.1",
 		"@tailwindcss/typography": "^0.5.16",
@@ -18,6 +20,7 @@
 		"assemblyai": "^4.13.3",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"dotenv": "^16.5.0",
 		"fluent-ffmpeg": "^2.1.3",
 		"lucide-react": "^0.522.0",
 		"mammoth": "^1.9.1",
@@ -38,6 +41,7 @@
 		"eslint": "^9",
 		"eslint-config-next": "15.3.4",
 		"tailwindcss": "^4",
+		"tsx": "^4.20.3",
 		"tw-animate-css": "^1.3.4",
 		"typescript": "^5"
 	}
