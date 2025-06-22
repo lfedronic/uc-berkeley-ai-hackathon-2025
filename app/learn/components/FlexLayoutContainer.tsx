@@ -5,98 +5,79 @@ import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react';
 import 'flexlayout-react/style/light.css';
 import ResizeObserverComponent from './ResizeObserver';
 
-// Initial layout configuration - hard-coded 2x2 grid as per M-0 milestone
+// Initial layout configuration - starts empty, tabs added dynamically via chat
 const initialModel: IJsonModel = {
   global: {
     tabEnableClose: true,
     tabEnableRename: false,
     borderSize: 25,
+    enableRotateBorderIcons: false,
   },
-  borders: [],
+
   layout: {
     type: 'row',
     weight: 100,
     children: [
       {
-        type: 'column',
-        weight: 50,
-        children: [
-          {
-            type: 'tabset',
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                name: 'Lecture Notes',
-                component: 'content',
-                config: { contentType: 'lecture', bgColor: 'bg-blue-100' }
-              }
-            ]
-          },
-          {
-            type: 'tabset',
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                name: 'Quiz',
-                component: 'content',
-                config: { contentType: 'quiz', bgColor: 'bg-green-100' }
-              }
-            ]
-          }
-        ]
-      },
-      {
-        type: 'column',
-        weight: 50,
-        children: [
-          {
-            type: 'tabset',
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                name: 'Diagram',
-                component: 'content',
-                config: { contentType: 'diagram', bgColor: 'bg-purple-100' }
-              }
-            ]
-          },
-          {
-            type: 'tabset',
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                name: 'Summary',
-                component: 'content',
-                config: { contentType: 'summary', bgColor: 'bg-yellow-100' }
-              }
-            ]
-          }
-        ]
+        type: 'tabset',
+        weight: 100,
+        id: 'main-tabset',
+        children: []
       }
     ]
   }
 };
 
-// Placeholder content component
-const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
+import Summary from '@/components/Summary';
+import Quiz from '@/components/Quiz';
+
+// Content component that renders different types based on config
+const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
   const config = node.getConfig();
   const contentType = config?.contentType || 'default';
+  const data = config?.data;
+  
+  switch (contentType) {
+    case 'summary':
+      if (data?.content) {
+        return (
+          <Summary
+            content={data.content}
+            title={data.title}
+            topic={data.topic}
+            type={data.type}
+          />
+        );
+      }
+      break;
+      
+    case 'quiz':
+      if (data?.quiz) {
+        return (
+          <Quiz
+            quiz={data.quiz}
+            onComplete={(score, totalPoints) => {
+              console.log(`Quiz completed: ${score}/${totalPoints}`);
+            }}
+          />
+        );
+      }
+      break;
+  }
+  
+  // Fallback placeholder content
   const bgColor = config?.bgColor || 'bg-gray-100';
   
-  const getContentText = (type: string) => {
+  const getPlaceholderText = (type: string) => {
     switch (type) {
       case 'lecture':
         return 'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.';
       case 'quiz':
-        return 'Quiz Content\n\nThis pane would contain interactive quizzes and assessments.';
+        return 'Quiz Content\n\nUse the chat to generate a quiz and it will appear here.';
       case 'diagram':
         return 'Diagram Content\n\nThis pane would contain visual diagrams, charts, and illustrations.';
       case 'summary':
-        return 'Summary Content\n\nThis pane would contain AI-generated summaries and key points.';
+        return 'Summary Content\n\nUse the chat to generate a summary and it will appear here.';
       default:
         return 'Default Content\n\nPlaceholder content for this pane.';
     }
@@ -108,7 +89,7 @@ const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
         {node.getName()}
       </h2>
       <div className="flex-1 text-gray-700 whitespace-pre-line">
-        {getContentText(contentType)}
+        {getPlaceholderText(contentType)}
       </div>
       <div className="mt-4 text-xs text-gray-500">
         Pane ID: {node.getId()} | Type: {contentType}
@@ -147,7 +128,7 @@ const FlexLayoutContainer: React.FC = () => {
           data-widget={contentType}
           className="h-full w-full"
         >
-          <PlaceholderContent node={node} />
+          <DynamicContent node={node} />
         </div>
       );
     }
