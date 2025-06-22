@@ -1,11 +1,12 @@
-import fs from "fs/promises";
-import path from "path";
+import * as fs from "fs/promises";
+import * as path from "path";
 import { exec } from "child_process";
 import { promisify } from "util";
 // import pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 import { AssemblyAI } from "assemblyai";
 import { EmbeddingService } from "./embedding-service";
+import { DescriptionService } from "./description-service";
 
 const execAsync = promisify(exec);
 
@@ -36,7 +37,11 @@ export class FileProcessor {
 		await fs.writeFile(filePath, content, "utf8");
 	}
 
-	private static async createFilesIndex(folderPath: string): Promise<void> {
+	private static async createFilesIndex(
+		folderPath: string,
+		originalFileName: string,
+		mimeType: string
+	): Promise<void> {
 		try {
 			const files = await fs.readdir(folderPath);
 			const textFiles: string[] = [];
@@ -64,7 +69,24 @@ export class FileProcessor {
 				}
 			}
 
+			// Generate AI description for the original file
+			let aiDescription = "";
+			try {
+				const originalFilePath = path.join(folderPath, originalFileName);
+				aiDescription = await DescriptionService.generateFileDescription(
+					originalFilePath,
+					originalFileName,
+					mimeType
+				);
+			} catch (error) {
+				console.error("Error generating AI description:", error);
+				aiDescription = "File uploaded and processed successfully";
+			}
+
 			const filesIndex = {
+				originalFileName,
+				mimeType,
+				description: aiDescription,
 				textFiles: textFiles.sort(),
 				imageFiles: imageFiles.sort(),
 				totalFiles: textFiles.length + imageFiles.length,
@@ -79,7 +101,7 @@ export class FileProcessor {
 			);
 
 			console.log(
-				`Created files.json with ${filesIndex.totalFiles} indexed files`
+				`Created files.json with ${filesIndex.totalFiles} indexed files and AI description`
 			);
 		} catch (error) {
 			console.error("Error creating files index:", error);
@@ -304,7 +326,7 @@ export class FileProcessor {
 		}
 
 		// Create files.json index for easy access to text and image files
-		await this.createFilesIndex(folderPath);
+		await this.createFilesIndex(folderPath, filename, mimeType);
 
 		// Generate embeddings for text files
 		await this.generateEmbeddings(folderPath);
