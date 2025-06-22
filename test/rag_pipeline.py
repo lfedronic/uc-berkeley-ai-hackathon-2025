@@ -7,6 +7,17 @@ from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
+from pathlib import Path
+from bs4 import BeautifulSoup
+import subprocess
+import re
+
+
+load_dotenv()  # loads from .env by default
+
+google_key = os.getenv("GOOGLE_KEY")
+open_ai_key = os.getenv("OPENAPI_KEY")
 
 # === CONFIG ===
 DOC_DIR = "manim_docs_old"  # folder of .html pages downloaded with wget
@@ -15,7 +26,7 @@ SPLIT_CHUNKS_FILE = "split_manim_chunks.jsonl"
 VECTORSTORE_PATH = "manim_vectorstore_free"
 OUTPUT_FILE = "test/generated_animation.py"
 OLLAMA_MODEL = "deepseek-coder"
-USER_QUERY = "How does protein synthesis work?"
+USER_QUERY = "What is bubble sort?"
 
 def extract_clean_text_from_html(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -38,8 +49,7 @@ def extract_clean_text_from_html(path):
 
 
 # === STEP 1: Extract <main> tags from HTML files ===
-from pathlib import Path
-from bs4 import BeautifulSoup
+
 
 def extract_main_content(folder_path):
     chunks = []
@@ -103,7 +113,7 @@ else:
 # === STEP 4: Retrieve relevant docs for query ===
 retrieved_docs = vectorstore.similarity_search(USER_QUERY, k=4)
 context = "\n\n".join(doc.page_content for doc in retrieved_docs)
-print("CONTEXT IS", context)
+#print("CONTEXT IS", context)
 # === STEP 5: Build prompt for LLM (via LLM lol) ===
 prompt_for_prompt = f"""
 create an extremely detailed explanation of "{USER_QUERY}", and in that prompt add details for animating it with manim, so that it can be passed into a Gemini LLM instance.
@@ -112,7 +122,7 @@ End your full response with "Here is some documentation about Manim:"
 """
 
 client = genai.Client(
-    api_key="AIzaSyDSyIBzIJ9yVnXYd6sJaE7oZ0Vqnc4kEPM",
+    api_key=google_key,
 )
 
 response = client.models.generate_content(
@@ -120,7 +130,14 @@ response = client.models.generate_content(
 )
 prompt_helper = response.text
 # === STEP 6: Prompt LLM ===
-prompt = prompt_helper + f"\n{context}"
+prompt = prompt_helper + f"""\n{context}
+Do not hallucinate types. Stuff like "quadrant" doesnt exist
+Assume that the background color will be set to white via external configuration files. So do NOT draw anything in white color.
+Do not return backtick syntax either, just write the response as pure text.
+Make sure things do not overlap unless they are MEANT TO.
+"""
+# had to install latex distro because no matter how much i specified in the prompt, it kept using latex powered types.
+
 old_prompt = f"""
 You are a Manim animation expert.
 
@@ -132,7 +149,7 @@ Now write Python code using Manim that animates a DNA double helix.
 Use sine curves for the backbones and lines for base pairs.
 Use only primitives like Line, ParametricFunction, Dot, Text, etc.
 Return only the full Python code. Do not explain anything.
-Do not return backtick syntax either, just write the response as pure text.
+
 """
 
 
@@ -141,7 +158,9 @@ response = client.models.generate_content(
     model=model, contents=prompt
 )
 code = response.text
-
+# clean the response because the model keeps adding backtick/latex/md syntax for returning code blocks
+code = code.replace("```python", "")
+code = code.replace("```", "")
 
 """
 # === STEP 6: Call Ollama (local LLM) ===
@@ -154,7 +173,31 @@ response = requests.post("http://localhost:11434/api/generate", json={
 code = response.json()["response"]
 """
 # === STEP 7: Save code ===
-with open(OUTPUT_FILE, "w") as f:
+file_name = "_".join(USER_QUERY.split(" ")[:5])
+with open(f'test/{file_name}.py', "w") as f:
     f.write(code)
 
-print(f"✅ Manim animation code saved to: {OUTPUT_FILE}")
+print(f"✅ Manim animation code saved to: {file_name}")
+
+
+# === STEP 8: Optionally, run
+# Example: python3 -m manim -pql test/Whats_the_x-y_plane?_How.py CartesianPlanePlotting
+
+output_file = f'test/{file_name}.py'
+class_name = None
+
+# Try to extract the first class name from the generated code
+match = re.search(r'class\s+(\w+)\s*\(', code)
+if match:
+    class_name = match.group(1)
+else:
+    print("⚠️ Could not find a class name in the generated code. Please specify manually.")
+
+if class_name:
+    cmd = [
+        "python3", "-m", "manim", "-pql", output_file, class_name, "-c MANIM_CONFIG"
+    ]
+    print(f"Running: {' '.join(cmd)}")
+    subprocess.run(cmd)
+else:
+    print("Skipping manim run due to missing class name.")
