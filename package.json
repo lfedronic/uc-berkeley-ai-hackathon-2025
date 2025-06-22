@@ -16,6 +16,7 @@
 		"@google/generative-ai": "^0.24.1",
 		"@tailwindcss/typography": "^0.5.16",
 		"@types/fluent-ffmpeg": "^2.1.27",
+		"@vapi-ai/web": "^2.3.6",
 		"ai": "^4.3.16",
 		"assemblyai": "^4.13.3",
 		"class-variance-authority": "^0.7.1",
