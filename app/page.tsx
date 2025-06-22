@@ -71,6 +71,32 @@ export default function Home() {
 						</svg>
 						Voice Assistant
 					</Link>
+
+					<Link
+						href="/deskview"
+						className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-4 px-6 rounded-xl transition-colors duration-200 flex items-center justify-center gap-3 shadow-lg hover:shadow-xl"
+					>
+						<svg
+							className="w-5 h-5"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M3 9.5a1.5 1.5 0 0 1 3 0V12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9.5a1.5 1.5 0 1 1 3 0V12a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9.5z"
+							/>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M8 14v-5a4 4 0 1 1 8 0v5"
+							/>
+						</svg>
+						Live AI Tutor
+					</Link>
 				</div>
 			</div>
 		</div>

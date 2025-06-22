@@ -41,3 +41,13 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 /content/*
+
+# manim
+.venv/
+manim_docs/
+manim_docs_old/
+media/
+*.pyc
+*.jsonl
+manim_vectorstore_free/
+.vscode/
