@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Desk View Camera Test</title>
+  <style>
+    body {
+      background-color: #111;
+      color: #eee;
+      font-family: sans-serif;
+      text-align: center;
+      padding: 2rem;
+    }
+    select {
+      margin-top: 1rem;
+      padding: 0.5rem;
+    }
+    video {
+      margin-top: 2rem;
+      width: 90%;
+      max-width: 720px;
+      border-radius: 12px;
+      background: #000;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎥 Desk View Camera Selector</h1>
+  <select id="cameraSelect"></select>
+  <video id="video" autoplay playsinline muted></video>
+
+  <script>
+  const videoEl = document.getElementById('video');
+  const selectEl = document.getElementById('cameraSelect');
+
+  async function getCameraDevices() {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+    console.log("Available video devices:", videoDevices);
+
+    selectEl.innerHTML = '';
+    videoDevices.forEach(device => {
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.text = device.label || `Camera ${selectEl.length + 1}`;
+      selectEl.appendChild(option);
+    });
+  }
+
+  async function startStream(deviceId) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: deviceId ? { deviceId: { exact: deviceId } } : true
+      });
+      videoEl.srcObject = stream;
+      return stream;
+    } catch (err) {
+      console.error('❌ Error accessing camera:', err);
+    }
+  }
+
+  selectEl.addEventListener('change', () => {
+    startStream(selectEl.value);
+  });
+
+  async function init() {
+    // 🔑 Step 1: Get permission first
+    await startStream(); // grant camera permission
+    // 🔑 Step 2: Now we can list devices with labels
+    await getCameraDevices();
+    // Start the stream again with selected camera
+    if (selectEl.options.length > 0) {
+      startStream(selectEl.value);
+    }
+  }
+
+  init();
+</script>
+</body>
+</html>

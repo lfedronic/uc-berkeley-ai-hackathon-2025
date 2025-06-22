@@ -1,53 +1,22 @@
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.schema import Document
 import json
-from manim.utils.color.core import ManimColor
 
-# Adjust path to your actual JSON file
-with open("manim_full_symbols_deep.json", "r") as f:
-    full_data = json.load(f)
+with open("manim_flat_symbols.json", "r") as f:
+    data = json.load(f)
 
-def flatten_json(full_data):
-    chunks = []
+docs = [
+    Document(
+        page_content=f"{entry['id']} — {entry['type']} — {entry.get('module', '')}",
+        metadata=entry
+    ) for entry in data
+]
 
-    for module_name, module_content in full_data.items():
-        if "error" in module_content:
-            continue
+splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=50)
+split_docs = splitter.split_documents(docs)
 
-        # Constants
-        for const_name, const_val in module_content.get("constants", []):
-            if isinstance(const_val, str) and "#" in const_val:
-                const_type = "color"
-            else:
-                const_type = "constant"
-            chunks.append({
-                "id": const_name,
-                "type": const_type,
-                "value": const_val,
-                "module": module_name
-            })
-
-        # Functions
-        for func in module_content.get("functions", []):
-            chunks.append({
-                "id": func,
-                "type": "function",
-                "module": module_name
-            })
-
-        # Classes
-        for cls, info in module_content.get("classes", {}).items():
-            chunks.append({
-                "id": cls,
-                "type": "class",
-                "module": module_name,
-                "methods": info.get("methods", []),
-                "class_vars": info.get("class_vars", [])
-            })
-
-    return chunks
-
-flattened = flatten_json(full_data)
-
-with open("manim_symbol_chunks.json", "w") as f:
-    json.dump(flattened, f, indent=2)
-
-print("✅ Flattened chunks saved to manim_symbol_chunks.json")
+embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+vectorstore = FAISS.from_documents(split_docs, embedding)
+vectorstore.save_local("manim_vector_flat")

@@ -27,7 +27,7 @@ SPLIT_CHUNKS_FILE = "test/temp/split_manim_chunks.jsonl"
 VECTORSTORE_PATH = "test/temp/manim_vectorstore_free"
 OUTPUT_FILE = "test/generated_animation.py"
 OLLAMA_MODEL = "deepseek-coder"
-USER_QUERY = "What is bubble sort?"
+USER_QUERY = "What is a matrix multiplication?"
 
 def extract_clean_text_from_html(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -119,22 +119,36 @@ if not os.path.exists(RAW_CHUNKS_FILE):
 #retrieved_docs = vectorstore.similarity_search(USER_QUERY, k=4)
 #context = "\n\n".join(doc.page_content for doc in retrieved_docs)
 #print("CONTEXT IS", context)
-with open("manim_symbol_chunks.json", "r") as f:
-    CHUNKS = json.load(f)
+with open("manim_flat_symbols.json", "r") as f:
+    data = json.load(f)
 
-def get_context_for_query(query):
-    query = query.lower()
-    results = []
 
-    for entry in CHUNKS:
-        searchable = entry["id"].lower()
-        if query in searchable:
-            results.append(entry)
-        elif entry.get("methods"):
-            if any(query in method.lower() for method in entry["methods"]):
-                results.append(entry)
-
-    return results
+#def format_entry_for_embedding(entry):
+#    lines = [f"{entry['id']} — {entry['type']} — {entry.get('module', '')}"]
+#
+#    # Add method names and class variables if present
+#    if entry.get("methods"):
+#        lines.append("Methods:\n" + "\n".join(entry["methods"]))
+#    if entry.get("class_vars"):
+#        lines.append("Class Vars:\n" + "\n".join(entry["class_vars"]))
+#    if entry.get("value"):
+#        lines.append(f"Value: {entry['value']}")
+#
+#    return "\n".join(lines)
+#
+#docs = [
+#    Document(
+#        page_content=format_entry_for_embedding(entry),
+#        metadata=entry
+#    ) for entry in data
+#]
+#
+#splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=50)
+#split_docs = splitter.split_documents(docs)
+#
+#embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+#vectorstore = FAISS.from_documents(split_docs, embedding)
+#vectorstore.save_local("manim_vector_flat")
 
 
 symbols_prompt = f"""You are an assistant that scans user prompts and determines
@@ -149,37 +163,26 @@ Do not output anything else (like "Yes I understand!" or anything conversational
 client = genai.Client(
     api_key=google_key,
 )
+#
+#response = client.models.generate_content(
+#    model='gemini-2.5-flash', contents=symbols_prompt
+#)
+#query = response.text
+#print(query)
+#print(f"🔍 Searching for: {query}")
+#
+#vectorstore = FAISS.load_local("manim_vector_flat", embedding, allow_dangerous_deserialization=True)
+#matches = vectorstore.similarity_search(query, k=5)
+#context = ""
+#for doc in matches:
+#    print(doc.page_content)
+#    context += doc.page_content
 
-response = client.models.generate_content(
-    model='gemini-2.5-flash', contents=symbols_prompt
-)
-query = response.text
-print(query)
-print(f"🔍 Searching for: {query}")
-for entry in CHUNKS:
-    if query in entry["id"].lower():
-        print("✅ Match by ID:", entry["id"])
-    elif entry.get("methods") and any(query in m.lower() for m in entry["methods"]):
-        print("✅ Match by method:", entry["id"], "->", entry["methods"])
-def format_context(matches):
-    blocks = []
-    for match in matches:
-        if match["type"] == "class":
-            blocks.append(f"Class `{match['id']}` in `{match['module']}`:\n- Methods: {match['methods']}\n- Vars: {match['class_vars']}")
-        elif match["type"] == "function":
-            blocks.append(f"Function `{match['id']}` in `{match['module']}`")
-        elif match["type"] == "color":
-            blocks.append(f"Color constant `{match['id']}` = {match['value']} (in {match['module']})")
-        else:
-            blocks.append(f"Constant `{match['id']}` = {match['value']} (in {match['module']})")
-    return "\n\n".join(blocks)
 
-# Use in prompt
-context = format_context(get_context_for_query(USER_QUERY))
 # === STEP 5: Build prompt for LLM (via LLM lol) ===
 prompt_for_prompt = f"""
 create an extremely detailed explanation of "{USER_QUERY}", and in that prompt add details for animating it with manim, so that it can be passed into a Gemini LLM instance.
-The prompt needs to make the LLM generate code that creates a hyper-specific animation. Make sure to tell it to use primitive types from the actual manim library, and to not hallucinate anything.
+The prompt needs to make the LLM generate code that creates an animation with LIMITED detail. Make sure to tell it to use primitive types from the actual manim library, and to not hallucinate anything.
 """
 
 
@@ -190,15 +193,18 @@ prompt_helper = response.text
 #json_data = ""
 #with open("manim_full_symbols_deep.json", "r") as f:
 #    json_data = f.read()
-json_data = context
-print(json_data)
+with open("manim_cut.txt", 'r') as f:
+    context = f.read()
 # === STEP 6: Prompt LLM ===
 prompt = prompt_helper + f"""\n
 Do not return backtick syntax either, just write the response as pure text.
 Make sure things do not overlap unless they are MEANT TO.
-Do not hallucinate types. to prevent you from hallucinating types, i have created a massive json file that includes ALL valid constants, classes, and methods you may use.
+Do not hallucinate types. to prevent you from hallucinating types, i have curated some elements (that maybe in json format) that includes ALL valid constants, classes, and methods you may use.
 The library was updated recently, so you defintely have functions in your memory or training data that are completely outdated, so refer to this to check if a function exists.
-The json data is:\n{json_data}
+Here ya go: {context}
+
+
+WRITE A PYTHON SCRIPT THAT USES MANIM NOTHING ELSE I DONT WANT AN EXPLANATION FROM YOU.
 """
 # had to install latex distro because no matter how much i specified in the prompt, it kept using latex powered types.
 
@@ -217,7 +223,7 @@ Return only the full Python code. Do not explain anything.
 """
 
 modelfamily_used = "gemini"
-model = "gemini-2.5-flash-lite-preview-06-17"
+model = "gemini-2.0-flash"
 response = client.models.generate_content(
     model=model, contents=prompt
 )
@@ -246,7 +252,43 @@ print(code)
 # clean the response because the model keeps adding backtick/latex/md syntax for returning code blocks
 code = code.replace("```python", "")
 code = code.replace("```", "")
+import re
 
+lines = code.split("\n")
+wrapped_lines = []
+i = 0
+
+while i < len(lines):
+    line = lines[i]
+    stripped = line.strip()
+
+    # Detect start of a multiline method call (like self.play(... or self.add(...))
+    if re.match(r"self\.\w+\s*\($", stripped):
+        indent = len(line) - len(stripped)
+        indent_space = " " * indent
+
+        # Start try block
+        wrapped_lines.append(f"{indent_space}try:")
+        wrapped_lines.append(f"{indent_space}    {stripped}")
+
+        # Start tracking parentheses
+        paren_balance = 1
+        i += 1
+
+        while i < len(lines) and paren_balance > 0:
+            next_line = lines[i]
+            paren_balance += next_line.count("(") - next_line.count(")")
+            wrapped_lines.append(f"{indent_space}    {next_line.strip()}")
+            i += 1
+
+        # Finish try-except
+        wrapped_lines.append(f"{indent_space}except Exception as e:")
+        wrapped_lines.append(f"{indent_space}    print(f'❌ Error: {{e}}')")
+    else:
+        wrapped_lines.append(line)
+        i += 1
+
+code = "\n".join(wrapped_lines)
 """
 # === STEP 6: Call Ollama (local LLM) ===
 response = requests.post("http://localhost:11434/api/generate", json={
