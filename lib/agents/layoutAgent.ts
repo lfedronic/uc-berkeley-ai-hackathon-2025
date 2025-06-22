@@ -522,7 +522,7 @@ Execute the user's layout instruction using the appropriate tools.`;
       system: systemPrompt,
       prompt: instruction,
       tools: { layout: layoutTool },
-      maxSteps: 5,
+      maxSteps: 128,
       temperature: 0.3,
     });
 

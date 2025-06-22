@@ -18,27 +18,23 @@ export const layoutTool = tool({
   
   parameters: z.object({
     action: z.enum(['addTab', 'activateTab', 'closeTab', 'split', 'getEnv'])
-      .describe('The layout action to perform'),
+      .describe('The action to perform on the layout'),
     
-    // Parameters for addTab
-    paneId: z.string().optional()
-      .describe('ID of the pane/tabset (required for addTab, activateTab, split)'),
-    title: z.string().optional()
-      .describe('Title for the new tab (required for addTab)'),
-    contentId: z.enum(['lecture', 'quiz', 'diagram', 'summary', 'placeholder']).optional()
-      .describe('Content type for the new tab (required for addTab)'),
-    makeActive: z.boolean().optional().default(true)
-      .describe('Whether to make the new tab active (for addTab)'),
-    
-    // Parameters for activateTab and closeTab
-    tabId: z.string().optional()
-      .describe('ID of the tab to activate or close (required for activateTab, closeTab)'),
-    
-    // Parameters for split
-    orientation: z.enum(['row', 'column']).optional()
-      .describe('Split orientation: row (left/right) or column (top/bottom) (required for split)'),
-    ratio: z.number().min(0.1).max(0.9).optional().default(0.5)
-      .describe('Split ratio between 0.1 and 0.9 (for split)'),
+    // Make all fields required but allow empty strings for unused fields
+    paneId: z.string()
+      .describe('ID of the pane/tabset. Required for: addTab, activateTab, split. Use empty string "" for other actions.'),
+    title: z.string()
+      .describe('Title for the new tab. Required for: addTab. Use empty string "" for other actions.'),
+    contentId: z.enum(['lecture', 'quiz', 'diagram', 'summary', 'placeholder', ''])
+      .describe('Content type for the new tab. Required for: addTab (use "quiz" for homework, "lecture" for presentations, "diagram" for charts, "summary" for notes). Use empty string "" for other actions.'),
+    makeActive: z.boolean()
+      .describe('Whether to make the new tab active. Used for: addTab (defaults to true). Use false for other actions.'),
+    tabId: z.string()
+      .describe('ID of the tab. Required for: activateTab, closeTab. Use empty string "" for other actions.'),
+    orientation: z.enum(['row', 'column', ''])
+      .describe('Split orientation: "row" for left/right, "column" for top/bottom. Required for: split. Use empty string "" for other actions.'),
+    ratio: z.number().min(0).max(1)
+      .describe('Split ratio between 0 and 1. Used for: split (defaults to 0.5). Use 0.5 for other actions.'),
   }),
   
   // NO execute function - tool calls forwarded to client

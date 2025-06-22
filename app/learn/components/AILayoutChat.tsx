@@ -88,25 +88,57 @@ const AILayoutChat: React.FC = () => {
       console.log('🔧 Tool call received:', toolCall);
       
       if (toolCall.toolName === 'layout') {
-        const args = toolCall.args as {
-          action: string;
-          paneId?: string;
-          title?: string;
-          contentId?: string;
-          makeActive?: boolean;
-          tabId?: string;
-          orientation?: string;
-          ratio?: number;
-        };
-        const { action, paneId, title, contentId, makeActive, tabId, orientation, ratio } = args;
-        console.log('🔧 Executing layout action:', { action, paneId, title, contentId, makeActive, tabId, orientation, ratio });
+        let args = toolCall.args as any;
+        
+        // Fix #3: Parameter flattening - handle nested structure if AI sends it incorrectly
+        if (args.action && typeof args.action === 'object') {
+          console.log('🔄 Detected nested action structure, flattening...');
+          console.log('🔄 Original args:', args);
+          
+          // Flatten the nested structure safely to avoid overwriting action
+          const nestedAction = args.action;
+          const { action: _a, ...rest } = nestedAction;
+          args = { action: _a, ...rest };
+          
+          console.log('🔄 Flattened args:', args);
+        }
+        
+        const { action } = args;
+        
+        // Fix contentId mapping - handle AI's creative contentId values
+        if (args.contentId && action === 'addTab') {
+          const originalContentId = args.contentId;
+          const validContentIds = ['lecture', 'quiz', 'diagram', 'summary', 'placeholder'];
+          
+          if (!validContentIds.includes(args.contentId)) {
+            console.log(`🔄 Mapping invalid contentId "${originalContentId}" to valid enum...`);
+            
+            // Map AI's creative names to valid enum values
+            const contentIdLower = args.contentId.toLowerCase();
+            if (contentIdLower.includes('homework') || contentIdLower.includes('quiz') || contentIdLower.includes('assignment') || contentIdLower.includes('test')) {
+              args.contentId = 'quiz';
+            } else if (contentIdLower.includes('lecture') || contentIdLower.includes('presentation') || contentIdLower.includes('slide')) {
+              args.contentId = 'lecture';
+            } else if (contentIdLower.includes('diagram') || contentIdLower.includes('chart') || contentIdLower.includes('graph') || contentIdLower.includes('visual')) {
+              args.contentId = 'diagram';
+            } else if (contentIdLower.includes('summary') || contentIdLower.includes('note') || contentIdLower.includes('conclusion')) {
+              args.contentId = 'summary';
+            } else {
+              args.contentId = 'placeholder';
+            }
+            
+            console.log(`🔄 Mapped "${originalContentId}" → "${args.contentId}"`);
+          }
+        }
+        console.log('🔧 Executing layout action:', { action, args });
         
         const model = getCurrentFlexLayoutModel();
         if (!model) {
           console.log('❌ FlexLayout model not available');
+          const errorResult = { success: false, error: 'Layout model not available' };
           addToolResult({
             toolCallId: toolCall.toolCallId,
-            result: { success: false, error: 'Layout model not available' }
+            result: JSON.stringify(errorResult)
           });
           return;
         }
@@ -174,44 +206,53 @@ const AILayoutChat: React.FC = () => {
           };
           
           switch (action) {
-            case 'addTab':
-              if (!paneId || !title || !contentId) {
-                result = { success: false, error: 'Missing required parameters for addTab' };
+            case 'addTab': {
+              const { paneId, title, contentId, makeActive } = args;
+              // Check for empty strings (new schema uses empty strings for unused fields)
+              if (!paneId || paneId === '' || !title || title === '' || !contentId || contentId === '') {
+                result = { success: false, error: 'Missing required parameters for addTab: paneId, title, contentId' };
                 break;
               }
               const resolvedPaneId = resolvePaneId(paneId);
               result = addTabToFlexLayout(model, resolvedPaneId, title, contentId, makeActive ?? true);
               break;
+            }
               
-            case 'activateTab':
-              if (!paneId || !tabId) {
-                result = { success: false, error: 'Missing required parameters for activateTab' };
+            case 'activateTab': {
+              const { paneId, tabId } = args;
+              if (!paneId || paneId === '' || !tabId || tabId === '') {
+                result = { success: false, error: 'Missing required parameters for activateTab: paneId, tabId' };
                 break;
               }
               const resolvedActivePaneId = resolvePaneId(paneId);
               const resolvedActiveTabId = resolveTabId(tabId);
               result = activateTabInFlexLayout(model, resolvedActivePaneId, resolvedActiveTabId);
               break;
+            }
               
-            case 'closeTab':
-              if (!tabId) {
-                result = { success: false, error: 'Missing required parameter tabId for closeTab' };
+            case 'closeTab': {
+              const { tabId } = args;
+              if (!tabId || tabId === '') {
+                result = { success: false, error: 'Missing required parameter for closeTab: tabId' };
                 break;
               }
               const resolvedCloseTabId = resolveTabId(tabId);
               result = closeTabInFlexLayout(model, resolvedCloseTabId);
               break;
+            }
               
-            case 'split':
-              if (!paneId || !orientation) {
-                result = { success: false, error: 'Missing required parameters for split' };
+            case 'split': {
+              const { paneId, orientation, ratio } = args;
+              if (!paneId || paneId === '' || !orientation || orientation === '') {
+                result = { success: false, error: 'Missing required parameters for split: paneId, orientation' };
                 break;
               }
               const resolvedSplitPaneId = resolvePaneId(paneId);
               result = splitPaneInFlexLayout(model, resolvedSplitPaneId, orientation as 'row' | 'column', ratio ?? 0.5);
               break;
+            }
               
-            case 'getEnv':
+            case 'getEnv': {
               const layoutState = collectLayoutState();
               result = {
                 success: true,
@@ -219,29 +260,51 @@ const AILayoutChat: React.FC = () => {
                 environment: layoutState
               };
               break;
+            }
               
             default:
               result = { success: false, error: `Unknown action: ${action}` };
           }
           
           console.log('✅ Layout action result:', result);
+          
+          // Ensure result is serializable
+          const safeResult = {
+            success: result.success,
+            message: result.message || (result.success ? 'Action completed successfully' : 'Action failed'),
+            error: result.error || undefined,
+            environment: 'environment' in result ? result.environment : undefined
+          };
+          
           addToolResult({
             toolCallId: toolCall.toolCallId,
-            result
+            result: JSON.stringify(safeResult)
           });
           
         } catch (error) {
           console.error('💥 Layout action error:', error);
+          const errorResult = { 
+            success: false, 
+            error: 'Execution error',
+            message: error instanceof Error ? error.message : 'Unknown error occurred'
+          };
+          
           addToolResult({
             toolCallId: toolCall.toolCallId,
-            result: { 
-              success: false, 
-              error: 'Execution error',
-              details: error instanceof Error ? error.message : 'Unknown error'
-            }
+            result: JSON.stringify(errorResult)
           });
         }
       }
+    },
+    
+    // Add error handling for the chat
+    onError: (error) => {
+      console.error('💥 Chat error:', error);
+    },
+    
+    // Add finish handler for debugging
+    onFinish: (message) => {
+      console.log('✅ Chat message finished:', message.id);
     },
   });
 
@@ -255,6 +318,11 @@ const AILayoutChat: React.FC = () => {
 
   const handleFormSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!input.trim()) {
+      console.log('⚠️ Empty input, not submitting');
+      return;
+    }
     
     // Collect current layout state to send as context
     const layoutState = collectLayoutState();
@@ -330,6 +398,11 @@ const AILayoutChat: React.FC = () => {
                   {message.toolInvocations.map((invocation, index) => (
                     <div key={index} className="mt-1">
                       • {invocation.toolName}: {invocation.args?.action || 'Layout action'}
+                      {invocation.state === 'result' && invocation.result && (
+                        <span className={`ml-1 ${invocation.result.success ? 'text-green-600' : 'text-red-600'}`}>
+                          ({invocation.result.success ? '✓' : '✗'})
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -367,6 +440,7 @@ const AILayoutChat: React.FC = () => {
               key={index}
               onClick={() => handleInputChange({ target: { value: command } } as any)}
               className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+              disabled={isLoading}
             >
               {command}
             </button>
