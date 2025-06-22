@@ -1,16 +1,22 @@
+/* ──────────────────────────────────────────────────────────────────
+   app/learn/components/FlexLayoutContainer.tsx
+   – merged dynamic-UI + real-content version
+─────────────────────────────────────────────────────────────────── */
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react';
+import { Layout, Model, TabNode, IJsonModel, Actions, DockLocation } from 'flexlayout-react';
 import 'flexlayout-react/style/light.css';
-import { useLayoutStore } from '@/lib/stores/layoutStore';    // unchanged path
-import { buildLabelMap } from '@/lib/stores/layoutStore';
 
+import { useLayoutStore, buildLabelMap } from '@/lib/stores/layoutStore';
+import Summary    from '@/components/Summary';
+import Quiz       from '@/components/Quiz';
+import ChatPopup  from '@/components/ChatPopup';
+import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 
-/* ---------- initial grid ---------- */
+/* ---------- starter layout: 2×2 placeholders ---------- */
 const initialModel: IJsonModel = {
   global: { tabEnableClose: true, tabEnableRename: false, borderSize: 25 },
-  borders: [],
   layout: {
     type: 'row',
     weight: 100,
@@ -25,6 +31,7 @@ const initialModel: IJsonModel = {
             children: [
               {
                 type: 'tab',
+                id:   'lecture-welcome',
                 name: 'Lecture Notes',
                 component: 'content',
                 config: { contentType: 'lecture', bgColor: 'bg-blue-100' },
@@ -37,6 +44,7 @@ const initialModel: IJsonModel = {
             children: [
               {
                 type: 'tab',
+                id:   'quiz-welcome',
                 name: 'Quiz',
                 component: 'content',
                 config: { contentType: 'quiz', bgColor: 'bg-green-100' },
@@ -55,6 +63,7 @@ const initialModel: IJsonModel = {
             children: [
               {
                 type: 'tab',
+                id:   'diagram-welcome',
                 name: 'Diagram',
                 component: 'content',
                 config: { contentType: 'diagram', bgColor: 'bg-purple-100' },
@@ -63,10 +72,12 @@ const initialModel: IJsonModel = {
           },
           {
             type: 'tabset',
+            id:   'main-tabset',          // ← will collect chat-generated tabs
             weight: 50,
             children: [
               {
                 type: 'tab',
+                id:   'summary-welcome',
                 name: 'Summary',
                 component: 'content',
                 config: { contentType: 'summary', bgColor: 'bg-yellow-100' },
@@ -79,34 +90,60 @@ const initialModel: IJsonModel = {
   },
 };
 
-/* ---------- helper: slug → camelCase ---------- */
-const slug = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/ (.)/g, (_, c) => c.toUpperCase());
+/* ---------- content renderer ---------- */
+const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
+  const { contentType, bgColor, data } = node.getConfig();
 
-/* ---------- placeholder renderer ---------- */
-const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
-  const { contentType, bgColor } = node.getConfig();
+  switch (contentType) {
+    case 'summary':
+      if (data?.content) {
+        return (
+          <Summary
+            content={data.content}
+            title={data.title}
+            topic={data.topic}
+            type={data.type}
+          />
+        );
+      }
+      break;
+
+    case 'quiz':
+      if (data?.quiz) {
+        return (
+          <Quiz
+            quiz={data.quiz}
+            onComplete={(score, total) =>
+              console.log(`Quiz finished → ${score}/${total}`)
+            }
+          />
+        );
+      }
+      break;
+  }
+
+  /* placeholder fallback */
   const text: Record<string, string> = {
     lecture:
       'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.',
-    quiz: 'Quiz Content\n\nThis pane would contain interactive quizzes and assessments.',
+    quiz:
+      'Quiz Content\n\nUse the chat to generate a quiz and it will appear here.',
     diagram:
       'Diagram Content\n\nThis pane would contain visual diagrams, charts, and illustrations.',
     summary:
-      'Summary Content\n\nThis pane would contain AI-generated summaries and key points.',
+      'Summary Content\n\nUse the chat to generate a summary and it will appear here.',
+    welcome:
+      'Welcome to the AI Learning Platform!\n\nUse the chat popup to generate:\n• Concept summaries and lesson plans\n• Interactive quizzes\n\nEach item appears as a draggable tab.',
   };
+
   return (
-    <div className={`h-full w-full p-4 ${bgColor ?? 'bg-gray-100'} flex flex-col`}>
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">{node.getName()}</h2>
+    <div className={`h-full w-full flex flex-col p-4 ${bgColor ?? 'bg-gray-100'}`}>
+      <h2 className="mb-4 text-lg font-semibold text-gray-800">{node.getName()}</h2>
       <div className="flex-1 whitespace-pre-line text-gray-700">
-        {text[contentType] ?? 'Default Content\n\nPlaceholder for this pane.'}
+        {text[contentType] ?? 'Placeholder'}
       </div>
       <div className="mt-4 text-xs text-gray-500">
-        Pane&nbsp;ID: {node.getId()} | Type: {contentType ?? 'default'}
+        Tab&nbsp;ID: {node.getId()} | Type: {contentType ?? 'default'}
       </div>
     </div>
   );
@@ -115,62 +152,151 @@ const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
 /* ---------- component ---------- */
 let globalModel: Model | null = null;
 
-
 const FlexLayoutContainer: React.FC = () => {
   const [model, setModel] = useState<Model | null>(null);
-  const ref = useRef<HTMLDivElement>(null);
-  const { updateEnv, setLayoutJson } = useLayoutStore(); // 🆕 simpler selector
+  const shellRef          = useRef<HTMLDivElement>(null);
 
+  const { updateEnv, setLayoutJson } = useLayoutStore();
+
+  /* initialise model */
   useEffect(() => {
     const m = Model.fromJson(initialModel);
     setModel(m);
     globalModel = m;
-    refreshLabelsAndJson(m);
+    commit(m);
   }, []);
 
-  /* refresh labels + JSON on every change */
-  const refreshLabelsAndJson = (m: Model) => {
-    /* delegates label-building to the store (F3) */
-    const json = m.toJson();
-    const labels = (json.layout ? buildLabelMap(json.layout) : {}) as Record<
-      string,
-      string
-    >;
+  /* helper: keep store in-sync */
+  const commit = (m: Model) => {
+    const json   = m.toJson();
+    const labels = buildLabelMap(json.layout);
     setLayoutJson(json, labels);
   };
 
-  const onModelChange = (m: Model) => { setModel(m); globalModel = m; refreshLabelsAndJson(m); };
-
-  /* publish env via ResizeObserver */
+  /* publish environment */
   useEffect(() => {
-    if (!ref.current || !model) return;
-    const ro = new ResizeObserver(pub);
-    ro.observe(ref.current); pub();
+    if (!shellRef.current || !model) return;
+    const ro = new ResizeObserver(report);
+    ro.observe(shellRef.current);
+    report();
     return () => ro.disconnect();
 
-    function pub() {
-      const { width, height } = ref.current!.getBoundingClientRect();
-      const panes = Array.from(ref.current!.querySelectorAll<HTMLElement>('[data-pane-id]')).map((el) => {
+    function report() {
+      const { width, height } = shellRef.current!.getBoundingClientRect();
+      const panes = Array.from(
+        shellRef.current!.querySelectorAll<HTMLElement>('[data-pane-id]'),
+      ).map((el) => {
         const r = el.getBoundingClientRect();
-        return { id: el.dataset.paneId!, widget: el.dataset.widget!, box: { w: Math.round(r.width), h: Math.round(r.height) }, minW: 320, minH: 240 };
+        return {
+          id: el.dataset.paneId!,
+          widget: el.dataset.widget!,
+          box: { w: Math.round(r.width), h: Math.round(r.height) },
+          minW: 320,
+          minH: 240,
+        };
       });
-      updateEnv({ viewport: { w: Math.round(width), h: Math.round(height), dpr: window.devicePixelRatio || 1 }, panes });
+      updateEnv({
+        viewport: { w: Math.round(width), h: Math.round(height), dpr: window.devicePixelRatio || 1 },
+        panes,
+      });
     }
   }, [model, updateEnv]);
 
-  if (!model) return <div className="flex h-full items-center justify-center">Loading…</div>;
+  /* ------------------------------------------------------------------ */
+  /*  Chat → create SUMMARY tab                                         */
+  /* ------------------------------------------------------------------ */
+  const handleLessonUpdate = (markdown: string) => {
+    if (!model) return;
+    /* pull first heading / line as title */
+    const title =
+      markdown.split('\n').find((l) => l.trim().match(/^#+\s/))?.replace(/^#+\s*/, '').trim() ??
+      'Summary';
 
-  const factory = (n: TabNode) =>
-    n.getComponent() === 'content' ? (
-      <div data-pane-id={n.getId()} data-widget={n.getConfig()?.contentType} className="h-full w-full">
-        <PlaceholderContent node={n} />
-      </div>
-    ) : (
-      <div>Unknown component {n.getComponent()}</div>
+    const tabId = `tab-${Date.now()}`;
+    model.doAction(
+      Actions.addNode(
+        {
+          type: 'tab',
+          id:   tabId,
+          name: title,
+          component: 'content',
+          config: {
+            contentType: 'summary',
+            data: { content: markdown, title, topic: title, type: 'summary' },
+          },
+        },
+        'main-tabset',
+        DockLocation.CENTER,
+        -1,
+        true,
+      ),
     );
+    commit(model);
+  };
 
-  return <div ref={ref} className="h-full w-full overflow-hidden"><Layout model={model} factory={factory} onModelChange={onModelChange} /></div>;
+  /* ------------------------------------------------------------------ */
+  /*  Chat → create QUIZ tab                                            */
+  /* ------------------------------------------------------------------ */
+  const handleQuizUpdate = (quiz: GeneratedQuiz) => {
+    if (!model) return;
+    const tabId = `tab-${Date.now()}`;
+    model.doAction(
+      Actions.addNode(
+        {
+          type: 'tab',
+          id:   tabId,
+          name: quiz.title,
+          component: 'content',
+          config: {
+            contentType: 'quiz',
+            data: { quiz },
+          },
+        },
+        'main-tabset',
+        DockLocation.CENTER,
+        -1,
+        true,
+      ),
+    );
+    commit(model);
+  };
+
+  /* ------------------------------------------------------------------ */
+  /*  flexlayout factory + change hook                                  */
+  /* ------------------------------------------------------------------ */
+  const factory = (n: TabNode) => (
+    <div
+      data-pane-id={n.getId()}
+      data-widget={n.getConfig()?.contentType}
+      className="h-full w-full"
+    >
+      <DynamicContent node={n} />
+    </div>
+  );
+
+  const onModelChange = (m: Model) => {
+    setModel(m);
+    globalModel = m;
+    commit(m);
+  };
+
+  if (!model) {
+    return <div className="flex h-full items-center justify-center">Loading…</div>;
+  }
+
+  return (
+    <div ref={shellRef} className="h-full w-full overflow-hidden relative">
+      <Layout model={model} factory={factory} onModelChange={onModelChange} />
+
+      {/* floating chat popup that feeds back into the layout */}
+      <ChatPopup onLessonUpdate={handleLessonUpdate} onQuizUpdate={handleQuizUpdate} />
+    </div>
+  );
 };
 
-export function getCurrentFlexLayoutModel() { return globalModel; }
+/* exported for tools / LayoutChat */
+export function getCurrentFlexLayoutModel() {
+  return globalModel;
+}
+
 export default FlexLayoutContainer;
