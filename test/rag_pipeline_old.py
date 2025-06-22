@@ -87,111 +87,56 @@ if not os.path.exists(RAW_CHUNKS_FILE):
             f.write("\n")
     print(f"✅ Extracted {len(chunks)} <main> chunks from HTML")
 
-#with open(RAW_CHUNKS_FILE, "r", encoding="utf-8") as f:
-## === STEP 2: Chunk text to ~1000 characters ===
-#    raw_chunks = [json.loads(line) for line in f]
-#
-#docs = [Document(page_content=chunk["text"], metadata={"source": chunk["source"]}) for chunk in raw_chunks]
-#splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-#split_docs = splitter.split_documents(docs)
-#
-## Ensure directory exists for SPLIT_CHUNKS_FILE
-#os.makedirs(os.path.dirname(SPLIT_CHUNKS_FILE), exist_ok=True)
-#with open(SPLIT_CHUNKS_FILE, "w", encoding="utf-8") as f:
-#    for doc in split_docs:
-#        json.dump({"text": doc.page_content, "metadata": doc.metadata}, f)
-#        f.write("\n")
-#
-#print(f"✅ Chunked into {len(split_docs)} total docs")
-#
-## === STEP 3: Embed and store in FAISS ===
-#embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-#
-#if not os.path.exists(VECTORSTORE_PATH):
-#    vectorstore = FAISS.from_documents(split_docs, embedding)
-#    vectorstore.save_local(VECTORSTORE_PATH)
-#    print(f"✅ Saved FAISS vectorstore to {VECTORSTORE_PATH}")
-#else:
-#    vectorstore = FAISS.load_local(VECTORSTORE_PATH, embedding, allow_dangerous_deserialization=True)
-#    print(f"✅ Loaded FAISS vectorstore")
+# === STEP 2: Chunk text to ~1000 characters ===
+with open(RAW_CHUNKS_FILE, "r", encoding="utf-8") as f:
+    raw_chunks = [json.loads(line) for line in f]
+
+docs = [Document(page_content=chunk["text"], metadata={"source": chunk["source"]}) for chunk in raw_chunks]
+splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+split_docs = splitter.split_documents(docs)
+
+# Ensure directory exists for SPLIT_CHUNKS_FILE
+os.makedirs(os.path.dirname(SPLIT_CHUNKS_FILE), exist_ok=True)
+with open(SPLIT_CHUNKS_FILE, "w", encoding="utf-8") as f:
+    for doc in split_docs:
+        json.dump({"text": doc.page_content, "metadata": doc.metadata}, f)
+        f.write("\n")
+
+print(f"✅ Chunked into {len(split_docs)} total docs")
+
+# === STEP 3: Embed and store in FAISS ===
+embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+
+if not os.path.exists(VECTORSTORE_PATH):
+    vectorstore = FAISS.from_documents(split_docs, embedding)
+    vectorstore.save_local(VECTORSTORE_PATH)
+    print(f"✅ Saved FAISS vectorstore to {VECTORSTORE_PATH}")
+else:
+    vectorstore = FAISS.load_local(VECTORSTORE_PATH, embedding, allow_dangerous_deserialization=True)
+    print(f"✅ Loaded FAISS vectorstore")
 
 # === STEP 4: Retrieve relevant docs for query ===
-#retrieved_docs = vectorstore.similarity_search(USER_QUERY, k=4)
-#context = "\n\n".join(doc.page_content for doc in retrieved_docs)
+retrieved_docs = vectorstore.similarity_search(USER_QUERY, k=4)
+context = "\n\n".join(doc.page_content for doc in retrieved_docs)
 #print("CONTEXT IS", context)
-with open("manim_symbol_chunks.json", "r") as f:
-    CHUNKS = json.load(f)
-
-def get_context_for_query(query):
-    query = query.lower()
-    results = []
-
-    for entry in CHUNKS:
-        searchable = entry["id"].lower()
-        if query in searchable:
-            results.append(entry)
-        elif entry.get("methods"):
-            if any(query in method.lower() for method in entry["methods"]):
-                results.append(entry)
-
-    return results
-
-
-symbols_prompt = f"""You are an assistant that scans user prompts and determines
-which Manim classes, functions, or constants will be needed
-to fulfill the prompt.
-
-Output a Python list of symbol names like:
-["Code", "insert_code", "Text", "Scene", "BLUE_E"]
-Your user prompt: {USER_QUERY}
-Do not output anything else (like "Yes I understand!" or anything conversational).
+# === STEP 5: Build prompt for LLM (via LLM lol) ===
+prompt_for_prompt = f"""
+create an extremely detailed explanation of "{USER_QUERY}", and in that prompt add details for animating it with manim, so that it can be passed into a Gemini LLM instance.
+The prompt needs to make the LLM generate code that creates a hyper-specific animation. Make sure to tell it to use primitive types from the actual manim library, and to not hallucinate anything.
+End your full response with "Here is some documentation about Manim:"
 """
+
 client = genai.Client(
     api_key=google_key,
 )
 
 response = client.models.generate_content(
-    model='gemini-2.5-flash', contents=symbols_prompt
-)
-query = response.text
-print(query)
-print(f"🔍 Searching for: {query}")
-for entry in CHUNKS:
-    if query in entry["id"].lower():
-        print("✅ Match by ID:", entry["id"])
-    elif entry.get("methods") and any(query in m.lower() for m in entry["methods"]):
-        print("✅ Match by method:", entry["id"], "->", entry["methods"])
-def format_context(matches):
-    blocks = []
-    for match in matches:
-        if match["type"] == "class":
-            blocks.append(f"Class `{match['id']}` in `{match['module']}`:\n- Methods: {match['methods']}\n- Vars: {match['class_vars']}")
-        elif match["type"] == "function":
-            blocks.append(f"Function `{match['id']}` in `{match['module']}`")
-        elif match["type"] == "color":
-            blocks.append(f"Color constant `{match['id']}` = {match['value']} (in {match['module']})")
-        else:
-            blocks.append(f"Constant `{match['id']}` = {match['value']} (in {match['module']})")
-    return "\n\n".join(blocks)
-
-# Use in prompt
-context = format_context(get_context_for_query(USER_QUERY))
-# === STEP 5: Build prompt for LLM (via LLM lol) ===
-prompt_for_prompt = f"""
-create an extremely detailed explanation of "{USER_QUERY}", and in that prompt add details for animating it with manim, so that it can be passed into a Gemini LLM instance.
-The prompt needs to make the LLM generate code that creates a hyper-specific animation. Make sure to tell it to use primitive types from the actual manim library, and to not hallucinate anything.
-"""
-
-
-response = client.models.generate_content(
     model='gemini-2.5-flash', contents=prompt_for_prompt
 )
 prompt_helper = response.text
-#json_data = ""
-#with open("manim_full_symbols_deep.json", "r") as f:
-#    json_data = f.read()
-json_data = context
-print(json_data)
+json_data = ""
+with open("manim_full_symbols_deep.json", "r") as f:
+    json_data = f.read()
 # === STEP 6: Prompt LLM ===
 prompt = prompt_helper + f"""\n
 Do not return backtick syntax either, just write the response as pure text.
