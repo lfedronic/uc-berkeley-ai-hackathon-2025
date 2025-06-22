@@ -1,17 +1,15 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react';
 import 'flexlayout-react/style/light.css';
-import ResizeObserverComponent from './ResizeObserver';
+import { useLayoutStore } from '@/lib/stores/layoutStore';    // unchanged path
+import { buildLabelMap } from '@/lib/stores/layoutStore';
 
-// Initial layout configuration - hard-coded 2x2 grid as per M-0 milestone
+
+/* ---------- initial grid ---------- */
 const initialModel: IJsonModel = {
-  global: {
-    tabEnableClose: true,
-    tabEnableRename: false,
-    borderSize: 25,
-  },
+  global: { tabEnableClose: true, tabEnableRename: false, borderSize: 25 },
   borders: [],
   layout: {
     type: 'row',
@@ -29,9 +27,9 @@ const initialModel: IJsonModel = {
                 type: 'tab',
                 name: 'Lecture Notes',
                 component: 'content',
-                config: { contentType: 'lecture', bgColor: 'bg-blue-100' }
-              }
-            ]
+                config: { contentType: 'lecture', bgColor: 'bg-blue-100' },
+              },
+            ],
           },
           {
             type: 'tabset',
@@ -41,11 +39,11 @@ const initialModel: IJsonModel = {
                 type: 'tab',
                 name: 'Quiz',
                 component: 'content',
-                config: { contentType: 'quiz', bgColor: 'bg-green-100' }
-              }
-            ]
-          }
-        ]
+                config: { contentType: 'quiz', bgColor: 'bg-green-100' },
+              },
+            ],
+          },
+        ],
       },
       {
         type: 'column',
@@ -59,9 +57,9 @@ const initialModel: IJsonModel = {
                 type: 'tab',
                 name: 'Diagram',
                 component: 'content',
-                config: { contentType: 'diagram', bgColor: 'bg-purple-100' }
-              }
-            ]
+                config: { contentType: 'diagram', bgColor: 'bg-purple-100' },
+              },
+            ],
           },
           {
             type: 'tabset',
@@ -71,137 +69,108 @@ const initialModel: IJsonModel = {
                 type: 'tab',
                 name: 'Summary',
                 component: 'content',
-                config: { contentType: 'summary', bgColor: 'bg-yellow-100' }
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }
+                config: { contentType: 'summary', bgColor: 'bg-yellow-100' },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 };
 
-// Placeholder content component
-const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
-  const config = node.getConfig();
-  const contentType = config?.contentType || 'default';
-  const bgColor = config?.bgColor || 'bg-gray-100';
-  
-  const getContentText = (type: string) => {
-    switch (type) {
-      case 'lecture':
-        return 'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.';
-      case 'quiz':
-        return 'Quiz Content\n\nThis pane would contain interactive quizzes and assessments.';
-      case 'diagram':
-        return 'Diagram Content\n\nThis pane would contain visual diagrams, charts, and illustrations.';
-      case 'summary':
-        return 'Summary Content\n\nThis pane would contain AI-generated summaries and key points.';
-      default:
-        return 'Default Content\n\nPlaceholder content for this pane.';
-    }
-  };
+/* ---------- helper: slug → camelCase ---------- */
+const slug = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/ (.)/g, (_, c) => c.toUpperCase());
 
+/* ---------- placeholder renderer ---------- */
+const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
+  const { contentType, bgColor } = node.getConfig();
+  const text: Record<string, string> = {
+    lecture:
+      'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.',
+    quiz: 'Quiz Content\n\nThis pane would contain interactive quizzes and assessments.',
+    diagram:
+      'Diagram Content\n\nThis pane would contain visual diagrams, charts, and illustrations.',
+    summary:
+      'Summary Content\n\nThis pane would contain AI-generated summaries and key points.',
+  };
   return (
-    <div className={`h-full w-full p-4 ${bgColor} flex flex-col`}>
-      <h2 className="text-lg font-semibold mb-4 text-gray-800">
-        {node.getName()}
-      </h2>
-      <div className="flex-1 text-gray-700 whitespace-pre-line">
-        {getContentText(contentType)}
+    <div className={`h-full w-full p-4 ${bgColor ?? 'bg-gray-100'} flex flex-col`}>
+      <h2 className="text-lg font-semibold mb-4 text-gray-800">{node.getName()}</h2>
+      <div className="flex-1 whitespace-pre-line text-gray-700">
+        {text[contentType] ?? 'Default Content\n\nPlaceholder for this pane.'}
       </div>
       <div className="mt-4 text-xs text-gray-500">
-        Pane ID: {node.getId()} | Type: {contentType}
+        Pane&nbsp;ID: {node.getId()} | Type: {contentType ?? 'default'}
       </div>
     </div>
   );
 };
 
-// Global model reference for tools to access
+/* ---------- component ---------- */
 let globalModel: Model | null = null;
 
+
 const FlexLayoutContainer: React.FC = () => {
-  const [model, setModel] = React.useState<Model | null>(null);
-  const modelRef = useRef<Model | null>(null);
+  const [model, setModel] = useState<Model | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const { updateEnv, setLayoutJson } = useLayoutStore(); // 🆕 simpler selector
 
   useEffect(() => {
-    // Initialize the FlexLayout model - this is now our single source of truth
-    const newModel = Model.fromJson(initialModel);
-    setModel(newModel);
-    modelRef.current = newModel;
-    globalModel = newModel; // Make available to tools
-    
-    console.log('✅ FlexLayout initialized as single source of truth');
+    const m = Model.fromJson(initialModel);
+    setModel(m);
+    globalModel = m;
+    refreshLabelsAndJson(m);
   }, []);
 
-  const factory = (node: TabNode) => {
-    const component = node.getComponent();
-    
-    if (component === 'content') {
-      const config = node.getConfig();
-      const contentType = config?.contentType || 'default';
-      
-      return (
-        <div 
-          data-pane-id={node.getId()} 
-          data-widget={contentType}
-          className="h-full w-full"
-        >
-          <PlaceholderContent node={node} />
-        </div>
-      );
-    }
-    
-    return <div>Unknown component: {component}</div>;
+  /* refresh labels + JSON on every change */
+  const refreshLabelsAndJson = (m: Model) => {
+    /* delegates label-building to the store (F3) */
+    const json = m.toJson();
+    const labels = (json.layout ? buildLabelMap(json.layout) : {}) as Record<
+      string,
+      string
+    >;
+    setLayoutJson(json, labels);
   };
 
-  const onModelChange = (newModel: Model) => {
-    // Handle user-initiated layout changes - FlexLayout is the source of truth
-    console.log('👆 User interaction - FlexLayout changed (native handling)');
-    
-    setModel(newModel);
-    modelRef.current = newModel;
-    globalModel = newModel; // Update global reference for tools
-    
-    // Optional: Save to localStorage for persistence
-    try {
-      localStorage.setItem('flexlayout-model', JSON.stringify(newModel.toJson()));
-      console.log('💾 Saved layout to localStorage');
-    } catch (error) {
-      console.warn('Failed to save layout:', error);
+  const onModelChange = (m: Model) => { setModel(m); globalModel = m; refreshLabelsAndJson(m); };
+
+  /* publish env via ResizeObserver */
+  useEffect(() => {
+    if (!ref.current || !model) return;
+    const ro = new ResizeObserver(pub);
+    ro.observe(ref.current); pub();
+    return () => ro.disconnect();
+
+    function pub() {
+      const { width, height } = ref.current!.getBoundingClientRect();
+      const panes = Array.from(ref.current!.querySelectorAll<HTMLElement>('[data-pane-id]')).map((el) => {
+        const r = el.getBoundingClientRect();
+        return { id: el.dataset.paneId!, widget: el.dataset.widget!, box: { w: Math.round(r.width), h: Math.round(r.height) }, minW: 320, minH: 240 };
+      });
+      updateEnv({ viewport: { w: Math.round(width), h: Math.round(height), dpr: window.devicePixelRatio || 1 }, panes });
     }
-  };
+  }, [model, updateEnv]);
 
-  if (!model) {
-    return <div className="flex items-center justify-center h-full">Loading layout...</div>;
-  }
+  if (!model) return <div className="flex h-full items-center justify-center">Loading…</div>;
 
-  return (
-    <ResizeObserverComponent>
-      <div className="h-full w-full relative overflow-hidden">
-        <div 
-          className="h-full w-full"
-          style={{
-            position: 'relative',
-            height: '100%',
-            maxHeight: '100%',
-            overflow: 'hidden'
-          }}
-        >
-          <Layout
-            model={model}
-            factory={factory}
-            onModelChange={onModelChange}
-          />
-        </div>
+  const factory = (n: TabNode) =>
+    n.getComponent() === 'content' ? (
+      <div data-pane-id={n.getId()} data-widget={n.getConfig()?.contentType} className="h-full w-full">
+        <PlaceholderContent node={n} />
       </div>
-    </ResizeObserverComponent>
-  );
+    ) : (
+      <div>Unknown component {n.getComponent()}</div>
+    );
+
+  return <div ref={ref} className="h-full w-full overflow-hidden"><Layout model={model} factory={factory} onModelChange={onModelChange} /></div>;
 };
 
-// Export function to get current model for tools
-export function getCurrentFlexLayoutModel(): Model | null {
-  return globalModel;
-}
-
+export function getCurrentFlexLayoutModel() { return globalModel; }
 export default FlexLayoutContainer;

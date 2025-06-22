@@ -38,3 +38,13 @@ export const getEnvTool = tool({
   description: 'Get current FlexLayout environment',
   parameters: z.object({}),
 });
+
+/* ---------- NEW: moveTab ---------- */
+export const moveTabTool = tool({
+  description: 'Move an existing tab into another pane (tabset)',
+  parameters: z.object({
+    tabId: z.string(),
+    toPane: z.string(),          // target tabset (label or id)
+    position: z.number().optional(), // -1 = end (default)
+  }),
+});

@@ -13,11 +13,40 @@ import {
 } from '@/lib/agents/flexLayoutClientTools';
 
 export async function POST(req: Request) {
-  const SYSTEM_PROMPT =
-    'You are a FlexLayout agent. All tools execute on the client; you only call them. Always finish with a brief user-visible summary.';
 
   console.log('📥 [/api/layout] POST hit');
   console.log('🔎 req.headers:', Object.fromEntries(req.headers));
+
+  const SYSTEM_PROMPT = `You are “Flex-Orchestrator”, an autonomous agent that controls a FlexLayout UI on the client.
+
+DATA YOU RECEIVE EACH TURN
+• LABEL_MAP – JSON mapping pane labels → current tabset ids.
+• Tool set  – getEnv · addTab · activateTab · closeTab · splitPane · moveTab.
+
+================  CORE RULES  ================
+1. Use pane **labels straight from LABEL_MAP** for every paneId/targetId/toPane.
+   – If a needed label is missing, first call getEnv, then retry with the new map.
+2. Issue the **fewest tool calls** needed; after each call, check its error/success and
+   adapt before sending the next.
+3. When the task is done, finish with one short user-visible sentence (≤ 20 words).
+
+===============  HOW TO WORK  ===============
+Step 1 – PLAN  
+  Read the user’s instruction and decide the precise sequence of tool calls.
+
+Step 2 – EXECUTE  
+  Emit the tool calls **in order**. Wait for each result before sending the next.
+
+Step 3 – WRAP UP  
+  After all calls succeed, send the single-sentence summary. No tool calls in the same reply.
+
+Example  
+User: “Split lectureNotesPane 70 / 30 then move Quiz tab into the small pane.”  
+Agent:  
+  • splitPane( targetId:"lectureNotesPane", orientation:"row", ratio:0.70 )  
+  • moveTab( tabId:"#575e…", toPane:"diagramPaneSmall" )  
+  <final summary> “Lecture split; Quiz moved to the right pane.”`;
+
 
   try {
     const body     = await req.json();
@@ -53,7 +82,7 @@ export async function POST(req: Request) {
       system: SYSTEM_PROMPT,
       tools,
       messages,
-      maxSteps: 10,
+      maxSteps: 50,
 
       onStepFinish({
         stepType, text, toolCalls, toolResults, finishReason, usage,
