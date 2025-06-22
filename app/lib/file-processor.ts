@@ -35,6 +35,57 @@ export class FileProcessor {
 		await fs.writeFile(filePath, content, "utf8");
 	}
 
+	private static async createFilesIndex(folderPath: string): Promise<void> {
+		try {
+			const files = await fs.readdir(folderPath);
+			const textFiles: string[] = [];
+			const imageFiles: string[] = [];
+
+			for (const file of files) {
+				const filePath = path.join(folderPath, file);
+				const stat = await fs.stat(filePath);
+
+				// Skip directories and the files.json itself
+				if (stat.isDirectory() || file === "files.json") {
+					continue;
+				}
+
+				const ext = path.extname(file).toLowerCase();
+
+				// Check for text files
+				if (ext === ".txt" || ext === ".md") {
+					textFiles.push(file);
+				}
+
+				// Check for image files
+				if ([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"].includes(ext)) {
+					imageFiles.push(file);
+				}
+			}
+
+			const filesIndex = {
+				textFiles: textFiles.sort(),
+				imageFiles: imageFiles.sort(),
+				totalFiles: textFiles.length + imageFiles.length,
+				createdAt: new Date().toISOString(),
+			};
+
+			const indexPath = path.join(folderPath, "files.json");
+			await fs.writeFile(
+				indexPath,
+				JSON.stringify(filesIndex, null, 2),
+				"utf8"
+			);
+
+			console.log(
+				`Created files.json with ${filesIndex.totalFiles} indexed files`
+			);
+		} catch (error) {
+			console.error("Error creating files index:", error);
+			// Don't throw - this is not critical for the main functionality
+		}
+	}
+
 	private static async processPDF(
 		filePath: string,
 		outputFolder: string
@@ -150,18 +201,20 @@ export class FileProcessor {
 		}
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	private static async processTextFile(
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		filePath: string,
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		outputFolder: string
 	): Promise<string[]> {
 		// For text files, we just copy them as-is since they're already in the right format
 		return [];
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-unused-vars
 	private static async processImageFile(
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		filePath: string,
+		// eslint-disable-next-line @typescript-eslint/no-unused-vars
 		outputFolder: string
 	): Promise<string[]> {
 		// For images, we keep them as-is
@@ -223,6 +276,9 @@ export class FileProcessor {
 			console.error("Error processing file:", error);
 			// Don't throw here - we still want to keep the original file even if processing fails
 		}
+
+		// Create files.json index for easy access to text and image files
+		await this.createFilesIndex(folderPath);
 
 		// Processing summary removed per user request
 
