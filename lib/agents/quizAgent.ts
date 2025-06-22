@@ -87,7 +87,7 @@ Return ONLY the JSON object, no additional text.`;
 
   try {
     const result = await generateText({
-      model: google('gemini-1.5-flash'),
+      model: google('gemini-2.5-flash'),
       prompt,
       maxTokens: 3000,
       temperature: 0.7,

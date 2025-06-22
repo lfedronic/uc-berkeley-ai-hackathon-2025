@@ -64,9 +64,15 @@ const AILayoutChat: React.FC = () => {
     setIsLoading(true);
 
     try {
+      console.log('🚀 AILayoutChat: Starting sendMessage');
+      console.log('🌐 Current URL:', window.location.href);
+      console.log('📝 User message:', userMessage.content);
+
       // Get current layout state
+      console.log('🔍 Getting FlexLayout model...');
       const model = getCurrentFlexLayoutModel();
       if (!model) {
+        console.log('❌ FlexLayout model not available');
         const errorMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
@@ -78,6 +84,7 @@ const AILayoutChat: React.FC = () => {
         return;
       }
 
+      console.log('✅ FlexLayout model obtained');
       const availablePanes = getAvailablePaneIds(model);
       const availableTabs = getAvailableTabIds(model);
       
@@ -88,18 +95,39 @@ const AILayoutChat: React.FC = () => {
         totalTabs: availableTabs.length
       };
 
+      console.log('📊 Layout state:', layoutState);
+
+      const requestData = {
+        message: userMessage.content,
+        layoutState
+      };
+
+      console.log('📦 Request data to send:', requestData);
+      console.log('🌐 Fetch URL: /api/layout-agent');
+      console.log('🌐 Full URL would be:', `${window.location.origin}/api/layout-agent`);
+
+      console.log('📡 Making fetch request...');
       const response = await fetch('/api/layout-agent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          message: userMessage.content,
-          layoutState
-        })
+        body: JSON.stringify(requestData)
       });
 
+      console.log('📡 Response received');
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response ok:', response.ok);
+      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
+
+      if (!response.ok) {
+        console.log('❌ Response not ok, response text:', await response.text());
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      console.log('📦 Parsing response JSON...');
       const data = await response.json();
+      console.log('📦 Response data:', data);
 
       if (data.success) {
         // Execute any commands returned by the AI
@@ -141,11 +169,15 @@ const AILayoutChat: React.FC = () => {
 
         setMessages(prev => [...prev, errorMessage]);
       }
-    } catch {
+    } catch (error) {
+      console.error('💥 AILayoutChat error:', error);
+      console.error('💥 Error details:', error instanceof Error ? error.message : 'Unknown error');
+      console.error('💥 Error stack:', error instanceof Error ? error.stack : 'No stack');
+      
       const errorMessage: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: 'Sorry, I couldn\'t process your request. Please check your connection and try again.',
+        content: `Sorry, I couldn't process your request. Error: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your connection and try again.`,
         timestamp: new Date()
       };
 

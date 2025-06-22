@@ -24,45 +24,38 @@ interface LayoutCommand {
   ratio?: number;
 }
 
-export const layoutTool = tool({
-  description: `Manage a dynamic split-screen UI layout for a multimodal AI tutor. 
-    The layout supports tabs within panes, drag/drop interactions, and programmatic control.
-    Available actions: addTab, activateTab, closeTab, split, getEnv.
+// Create a function that returns the tool with the current layout state
+export function createLayoutTool(layoutState: LayoutState) {
+  return tool({
+    description: `Manage a dynamic split-screen UI layout for a multimodal AI tutor. 
+      The layout supports tabs within panes, drag/drop interactions, and programmatic control.
+      Available actions: addTab, activateTab, closeTab, split, getEnv.
+      
+      Current layout: 2x2 grid with lecture, quiz, diagram, and summary panes.
+      Each pane can contain multiple tabs that users can switch between.
+      
+      Available Panes: ${layoutState.availablePanes.join(', ')}
+      Available Tabs: ${layoutState.availableTabs.map(t => `"${t.name}" (${t.id}) in ${t.paneId}`).join(', ')}`,
     
-    Current layout: 2x2 grid with lecture, quiz, diagram, and summary panes.
-    Each pane can contain multiple tabs that users can switch between.`,
-  
-  parameters: z.object({
-    action: z.enum(['addTab', 'activateTab', 'closeTab', 'split', 'getEnv']).describe('The layout action to perform'),
+    parameters: z.object({
+      action: z.enum(['addTab', 'activateTab', 'closeTab', 'split', 'getEnv']).describe('The layout action to perform'),
+      
+      // Parameters for addTab
+      paneId: z.string().optional().describe('ID of the pane/tabset to add tab to (required for addTab, activateTab, split)'),
+      title: z.string().optional().describe('Title for the new tab (required for addTab)'),
+      contentId: z.enum(['lecture', 'quiz', 'diagram', 'summary', 'placeholder']).optional().describe('Content type for the new tab (required for addTab)'),
+      makeActive: z.boolean().optional().default(true).describe('Whether to make the new tab active (for addTab)'),
+      
+      // Parameters for activateTab
+      tabId: z.string().optional().describe('ID of the tab to activate or close (required for activateTab, closeTab)'),
+      
+      // Parameters for split
+      orientation: z.enum(['row', 'column']).optional().describe('Split orientation: row (left/right) or column (top/bottom) (required for split)'),
+      ratio: z.number().min(0.1).max(0.9).optional().default(0.5).describe('Split ratio between 0.1 and 0.9 (for split)'),
+    }),
     
-    // Layout state (passed from client)
-    layoutState: z.object({
-      availablePanes: z.array(z.string()),
-      availableTabs: z.array(z.object({
-        id: z.string(),
-        name: z.string(),
-        paneId: z.string()
-      })),
-      totalPanes: z.number(),
-      totalTabs: z.number()
-    }).describe('Current layout state from client'),
-    
-    // Parameters for addTab
-    paneId: z.string().optional().describe('ID of the pane/tabset to add tab to (required for addTab, activateTab, split)'),
-    title: z.string().optional().describe('Title for the new tab (required for addTab)'),
-    contentId: z.enum(['lecture', 'quiz', 'diagram', 'summary', 'placeholder']).optional().describe('Content type for the new tab (required for addTab)'),
-    makeActive: z.boolean().optional().default(true).describe('Whether to make the new tab active (for addTab)'),
-    
-    // Parameters for activateTab
-    tabId: z.string().optional().describe('ID of the tab to activate or close (required for activateTab, closeTab)'),
-    
-    // Parameters for split
-    orientation: z.enum(['row', 'column']).optional().describe('Split orientation: row (left/right) or column (top/bottom) (required for split)'),
-    ratio: z.number().min(0.1).max(0.9).optional().default(0.5).describe('Split ratio between 0.1 and 0.9 (for split)'),
-  }),
-  
-  execute: async ({ action, layoutState, paneId, title, contentId, makeActive, tabId, orientation, ratio }) => {
-    try {
+    execute: async ({ action, paneId, title, contentId, makeActive, tabId, orientation, ratio }) => {
+      try {
       // Validate that we have layout state
       if (!layoutState) {
         return {
@@ -242,8 +235,9 @@ export const layoutTool = tool({
         command: null
       };
     }
-  }
-});
+    }
+  });
+}
 
 /**
  * Helper function to format layout state for AI context

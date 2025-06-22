@@ -518,7 +518,7 @@ Execute the user's layout instruction using the appropriate tools.`;
 
   try {
     const result = await generateText({
-      model: google('gemini-1.5-flash'),
+      model: google('gemini-2.5-flash'),
       system: systemPrompt,
       prompt: instruction,
       tools: { layout: layoutTool },
