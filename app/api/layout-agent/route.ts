@@ -1,10 +1,10 @@
 import { google } from '@ai-sdk/google';
 import { generateText } from 'ai';
-import { layoutTool, getLayoutContext } from '@/lib/agents/aiLayoutTools';
+import { layoutTool, formatLayoutContext } from '@/lib/agents/serverLayoutTools';
 
 export async function POST(req: Request) {
   try {
-    const { message } = await req.json();
+    const { message, layoutState } = await req.json();
 
     if (!message || typeof message !== 'string') {
       return Response.json(
@@ -13,8 +13,15 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get current layout context for the AI
-    const layoutContext = getLayoutContext();
+    if (!layoutState) {
+      return Response.json(
+        { error: 'Layout state is required' },
+        { status: 400 }
+      );
+    }
+
+    // Format layout context for the AI
+    const layoutContext = formatLayoutContext(layoutState);
 
     const result = await generateText({
       model: google('gemini-2.0-flash-exp'),
@@ -31,7 +38,7 @@ export async function POST(req: Request) {
         - Get current layout information
         
         Guidelines:
-        - Always check current layout state first if needed
+        - Always use the layout tool with the provided layoutState
         - Be helpful and explain what you're doing
         - If a user request is ambiguous, ask for clarification
         - Suggest appropriate content types (lecture, quiz, diagram, summary)

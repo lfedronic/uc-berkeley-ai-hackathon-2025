@@ -1,6 +1,15 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { getCurrentFlexLayoutModel } from './FlexLayoutContainer';
+import { 
+  addTabToFlexLayout, 
+  activateTabInFlexLayout, 
+  closeTabInFlexLayout, 
+  splitPaneInFlexLayout,
+  getAvailablePaneIds,
+  getAvailableTabIds
+} from '@/lib/agents/flexLayoutTools';
 
 interface ToolResult {
   result?: {
@@ -55,23 +64,68 @@ const AILayoutChat: React.FC = () => {
     setIsLoading(true);
 
     try {
+      // Get current layout state
+      const model = getCurrentFlexLayoutModel();
+      if (!model) {
+        const errorMessage: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'assistant',
+          content: 'Sorry, the layout system is not available right now.',
+          timestamp: new Date()
+        };
+        setMessages(prev => [...prev, errorMessage]);
+        setIsLoading(false);
+        return;
+      }
+
+      const availablePanes = getAvailablePaneIds(model);
+      const availableTabs = getAvailableTabIds(model);
+      
+      const layoutState = {
+        availablePanes,
+        availableTabs,
+        totalPanes: availablePanes.length,
+        totalTabs: availableTabs.length
+      };
+
       const response = await fetch('/api/layout-agent', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: userMessage.content
+          message: userMessage.content,
+          layoutState
         })
       });
 
       const data = await response.json();
 
       if (data.success) {
+        // Execute any commands returned by the AI
+        const executionResults: string[] = [];
+        
+        if (data.toolResults && data.toolResults.length > 0) {
+          for (const toolResult of data.toolResults) {
+            const command = toolResult.result?.command;
+            if (command) {
+              const execResult = await executeLayoutCommand(command);
+              if (execResult) {
+                executionResults.push(execResult);
+              }
+            }
+          }
+        }
+
+        let assistantContent = data.response;
+        if (executionResults.length > 0) {
+          assistantContent += '\n\nExecution results:\n' + executionResults.join('\n');
+        }
+
         const assistantMessage: ChatMessage = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
-          content: data.response,
+          content: assistantContent,
           timestamp: new Date(),
           toolResults: data.toolResults
         };
@@ -98,6 +152,83 @@ const AILayoutChat: React.FC = () => {
       setMessages(prev => [...prev, errorMessage]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const executeLayoutCommand = async (command: {
+    action: string;
+    paneId?: string;
+    title?: string;
+    contentId?: string;
+    makeActive?: boolean;
+    tabId?: string;
+    orientation?: string;
+    ratio?: number;
+  }): Promise<string | null> => {
+    const model = getCurrentFlexLayoutModel();
+    if (!model) return 'Layout model not available';
+
+    try {
+      let result;
+      
+      switch (command.action) {
+        case 'addTab':
+          if (!command.paneId || !command.title || !command.contentId) {
+            return '✗ Missing required parameters for addTab';
+          }
+          result = addTabToFlexLayout(
+            model,
+            command.paneId,
+            command.title,
+            command.contentId,
+            command.makeActive ?? true
+          );
+          break;
+          
+        case 'activateTab':
+          if (!command.paneId || !command.tabId) {
+            return '✗ Missing required parameters for activateTab';
+          }
+          result = activateTabInFlexLayout(
+            model,
+            command.paneId,
+            command.tabId
+          );
+          break;
+          
+        case 'closeTab':
+          if (!command.tabId) {
+            return '✗ Missing required parameter tabId for closeTab';
+          }
+          result = closeTabInFlexLayout(
+            model,
+            command.tabId
+          );
+          break;
+          
+        case 'split':
+          if (!command.paneId || !command.orientation) {
+            return '✗ Missing required parameters for split';
+          }
+          result = splitPaneInFlexLayout(
+            model,
+            command.paneId,
+            command.orientation as 'row' | 'column',
+            command.ratio ?? 0.5
+          );
+          break;
+          
+        default:
+          return `Unknown command: ${command.action}`;
+      }
+      
+      if (result.success) {
+        return `✓ ${result.message}`;
+      } else {
+        return `✗ ${result.error}: ${result.message}`;
+      }
+    } catch (error) {
+      return `✗ Execution error: ${error instanceof Error ? error.message : 'Unknown error'}`;
     }
   };
 
