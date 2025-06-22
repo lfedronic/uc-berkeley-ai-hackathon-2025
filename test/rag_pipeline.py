@@ -17,9 +17,8 @@ from openai import OpenAI
 
 load_dotenv()  # loads from .env by default
 
-google_key = os.getenv("GOOGLE_KEY")
-open_ai_key = os.getenv("OPENAI_KEY")
-
+google_key = os.getenv("GOOGLE_API_KEY")
+open_ai_key = os.getenv("OPENAI_API_KEY")
 # === CONFIG ===
 DOC_DIR = "manim_docs_old"  # folder of .html pages downloaded with wget
 RAW_CHUNKS_FILE = "test/temp/manim_doc_chunks.jsonl"
@@ -51,41 +50,41 @@ def extract_clean_text_from_html(path):
 
 # === STEP 1: Extract <main> tags from HTML files ===
 
-
-def extract_main_content(folder_path):
-    chunks = []
-
-    for file in Path(folder_path).rglob("*.html"):
-        with open(file, "r", encoding="utf-8") as f:
-            soup = BeautifulSoup(f.read(), "html.parser")
-
-        # Try multiple selectors to find main content
-        main = (
-            soup.find("div", class_="main") or
-            soup.find("article") or
-            soup.find("div", class_="document")
-        )
-
-        if main:
-            # Remove clutter tags inside main
-            for tag in main.find_all(["nav", "aside", "footer", "script", "style"]):
-                tag.decompose()
-
-            text = main.get_text(separator="\n", strip=True)
-            if text.strip():  # Make sure it's not empty
-                chunks.append({"text": text, "source": str(file)})
-
-    return chunks
-
-if not os.path.exists(RAW_CHUNKS_FILE):
-    chunks = extract_main_content(DOC_DIR)
-    # Ensure directory exists for RAW_CHUNKS_FILE
-    os.makedirs(os.path.dirname(RAW_CHUNKS_FILE), exist_ok=True)
-    with open(RAW_CHUNKS_FILE, "w", encoding="utf-8") as f:
-        for chunk in chunks:
-            json.dump(chunk, f)
-            f.write("\n")
-    print(f"✅ Extracted {len(chunks)} <main> chunks from HTML")
+#
+#def extract_main_content(folder_path):
+#    chunks = []
+#
+#    for file in Path(folder_path).rglob("*.html"):
+#        with open(file, "r", encoding="utf-8") as f:
+#            soup = BeautifulSoup(f.read(), "html.parser")
+#
+#        # Try multiple selectors to find main content
+#        main = (
+#            soup.find("div", class_="main") or
+#            soup.find("article") or
+#            soup.find("div", class_="document")
+#        )
+#
+#        if main:
+#            # Remove clutter tags inside main
+#            for tag in main.find_all(["nav", "aside", "footer", "script", "style"]):
+#                tag.decompose()
+#
+#            text = main.get_text(separator="\n", strip=True)
+#            if text.strip():  # Make sure it's not empty
+#                chunks.append({"text": text, "source": str(file)})
+#
+#    return chunks
+#
+#if not os.path.exists(RAW_CHUNKS_FILE):
+#    chunks = extract_main_content(DOC_DIR)
+#    # Ensure directory exists for RAW_CHUNKS_FILE
+#    os.makedirs(os.path.dirname(RAW_CHUNKS_FILE), exist_ok=True)
+#    with open(RAW_CHUNKS_FILE, "w", encoding="utf-8") as f:
+#        for chunk in chunks:
+#            json.dump(chunk, f)
+#            f.write("\n")
+#    print(f"✅ Extracted {len(chunks)} <main> chunks from HTML")
 
 #with open(RAW_CHUNKS_FILE, "r", encoding="utf-8") as f:
 ## === STEP 2: Chunk text to ~1000 characters ===

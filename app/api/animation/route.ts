@@ -3,18 +3,23 @@ import { generateAnimation, validateAnimationQuery, getAnimationTemplates, getAn
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('🔧 API Debug: POST request received');
     const body = await request.json();
+    console.log('🔧 API Debug: Request body parsed:', body);
     const { query, model, autoRun, outputFormat } = body;
 
     if (!query) {
+      console.log('🔧 API Debug: Query is missing');
       return NextResponse.json(
         { error: 'Query is required' },
         { status: 400 }
       );
     }
 
+    console.log('🔧 API Debug: Query validation starting...');
     // Validate the query
     const validation = await validateAnimationQuery(query);
+    console.log('🔧 API Debug: Query validation result:', validation);
     if (!validation.valid) {
       return NextResponse.json(
         { error: validation.error, suggestions: validation.suggestions },
@@ -22,6 +27,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('🔧 API Debug: About to call generateAnimation...');
     // Generate the animation
     const result = await generateAnimation({
       query,
@@ -29,6 +35,7 @@ export async function POST(request: NextRequest) {
       autoRun: autoRun || false,
       outputFormat: outputFormat || 'python'
     });
+    console.log('🔧 API Debug: generateAnimation completed, result:', result);
 
     if (!result.success) {
       return NextResponse.json(
@@ -40,7 +47,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(result);
 
   } catch (error) {
-    console.error('Animation API error:', error);
+    console.error('❌ Animation API error:', error);
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

@@ -12,13 +12,14 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import subprocess
 import re
+import sys
 from openai import OpenAI
 
 
 load_dotenv()  # loads from .env by default
 
-google_key = os.getenv("GOOGLE_KEY")
-open_ai_key = os.getenv("OPENAI_KEY")
+google_key = os.getenv("GOOGLE_API_KEY")  # Fixed environment variable name
+open_ai_key = os.getenv("OPENAI_API_KEY")  # Fixed environment variable name
 
 # === CONFIG ===
 DOC_DIR = "manim_docs_old"  # folder of .html pages downloaded with wget
@@ -26,8 +27,12 @@ RAW_CHUNKS_FILE = "test/temp/manim_doc_chunks.jsonl"
 SPLIT_CHUNKS_FILE = "test/temp/split_manim_chunks.jsonl"
 VECTORSTORE_PATH = "test/temp/manim_vectorstore_free"
 OUTPUT_FILE = "test/generated_animation.py"
-OLLAMA_MODEL = "deepseek-coder"
-USER_QUERY = "What is bubble sort?"
+
+    # Parse command line arguments
+if len(sys.argv) > 1:
+    USER_QUERY = sys.argv[1]
+else:
+    USER_QUERY = "What is merge sort?" # Default fallback
 
 def extract_clean_text_from_html(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -50,11 +55,9 @@ def extract_clean_text_from_html(path):
 
 
 # === STEP 1: Extract <main> tags from HTML files ===
-
-
 def extract_main_content(folder_path):
+    """Extracts the main textual content from HTML files in a directory."""
     chunks = []
-
     for file in Path(folder_path).rglob("*.html"):
         with open(file, "r", encoding="utf-8") as f:
             soup = BeautifulSoup(f.read(), "html.parser")
@@ -74,161 +77,218 @@ def extract_main_content(folder_path):
             text = main.get_text(separator="\n", strip=True)
             if text.strip():  # Make sure it's not empty
                 chunks.append({"text": text, "source": str(file)})
-
     return chunks
 
-if not os.path.exists(RAW_CHUNKS_FILE):
-    chunks = extract_main_content(DOC_DIR)
-    # Ensure directory exists for RAW_CHUNKS_FILE
-    os.makedirs(os.path.dirname(RAW_CHUNKS_FILE), exist_ok=True)
-    with open(RAW_CHUNKS_FILE, "w", encoding="utf-8") as f:
-        for chunk in chunks:
-            json.dump(chunk, f)
-            f.write("\n")
-    print(f"✅ Extracted {len(chunks)} <main> chunks from HTML")
-
-# === STEP 2: Chunk text to ~1000 characters ===
-with open(RAW_CHUNKS_FILE, "r", encoding="utf-8") as f:
-    raw_chunks = [json.loads(line) for line in f]
-
-docs = [Document(page_content=chunk["text"], metadata={"source": chunk["source"]}) for chunk in raw_chunks]
-splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
-split_docs = splitter.split_documents(docs)
-
-# Ensure directory exists for SPLIT_CHUNKS_FILE
-os.makedirs(os.path.dirname(SPLIT_CHUNKS_FILE), exist_ok=True)
-with open(SPLIT_CHUNKS_FILE, "w", encoding="utf-8") as f:
-    for doc in split_docs:
-        json.dump({"text": doc.page_content, "metadata": doc.metadata}, f)
-        f.write("\n")
-
-print(f"✅ Chunked into {len(split_docs)} total docs")
-
-# === STEP 3: Embed and store in FAISS ===
+# === Data Processing Pipeline (runs only if needed) ===
 embedding = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
 if not os.path.exists(VECTORSTORE_PATH):
+    print("INFO: Vectorstore not found. Building from scratch...")
+
+    # Step 1: Extract main content from HTML if raw chunks don't exist
+    if not os.path.exists(RAW_CHUNKS_FILE):
+        print("INFO: Raw chunks not found. Extracting from HTML...")
+        
+        if not os.path.exists(DOC_DIR) or not any(Path(DOC_DIR).rglob("*.html")):
+            print(f"FATAL: Documentation directory '{DOC_DIR}' not found or is empty.")
+            print("Please download the Manim documentation and place it in the correct directory.")
+            sys.exit(1)
+
+        chunks = extract_main_content(DOC_DIR)
+        
+        if not chunks:
+            print(f"FATAL: No content extracted from HTML files in '{DOC_DIR}'.")
+            print("This might be because the HTML structure has changed or the selectors are wrong.")
+            sys.exit(1)
+
+        os.makedirs(os.path.dirname(RAW_CHUNKS_FILE), exist_ok=True)
+        with open(RAW_CHUNKS_FILE, "w", encoding="utf-8") as f:
+            for chunk in chunks:
+                json.dump(chunk, f)
+                f.write("\n")
+        print(f"✅ Extracted {len(chunks)} <main> chunks from HTML")
+
+    # Step 2: Chunk text to ~1000 characters
+    print("INFO: Splitting documents into smaller chunks...")
+    with open(RAW_CHUNKS_FILE, "r", encoding="utf-8") as f:
+        raw_chunks = [json.loads(line) for line in f]
+
+    docs = [Document(page_content=chunk["text"], metadata={"source": chunk["source"]}) for chunk in raw_chunks]
+    splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+    split_docs = splitter.split_documents(docs)
+    print(f"✅ Chunked into {len(split_docs)} total docs")
+
+    # Step 3: Embed and store in FAISS
+    print("INFO: Creating and saving FAISS vectorstore...")
     vectorstore = FAISS.from_documents(split_docs, embedding)
     vectorstore.save_local(VECTORSTORE_PATH)
     print(f"✅ Saved FAISS vectorstore to {VECTORSTORE_PATH}")
+
 else:
+    print(f"✅ Loading existing FAISS vectorstore from {VECTORSTORE_PATH}")
     vectorstore = FAISS.load_local(VECTORSTORE_PATH, embedding, allow_dangerous_deserialization=True)
-    print(f"✅ Loaded FAISS vectorstore")
 
 # === STEP 4: Retrieve relevant docs for query ===
+print(f"INFO: Retrieving documents for query: '{USER_QUERY}'")
 retrieved_docs = vectorstore.similarity_search(USER_QUERY, k=4)
 context = "\n\n".join(doc.page_content for doc in retrieved_docs)
-#print("CONTEXT IS", context)
-# === STEP 5: Build prompt for LLM (via LLM lol) ===
-prompt_for_prompt = f"""
-create an extremely detailed explanation of "{USER_QUERY}", and in that prompt add details for animating it with manim, so that it can be passed into a Gemini LLM instance.
-The prompt needs to make the LLM generate code that creates a hyper-specific animation. Make sure to tell it to use primitive types from the actual manim library, and to not hallucinate anything.
-End your full response with "Here is some documentation about Manim:"
-"""
+print(f"✅ Retrieved {len(retrieved_docs)} relevant documents")
 
-client = genai.Client(
-    api_key=google_key,
-)
+# === STEP 5: Load and validate JSON data ===
+def load_manim_symbols():
+    """Load and validate Manim symbols data with fallbacks"""
+    json_files = [
+        "manim_full_symbols_deep.json",
+        "manim_flat_symbols.json", 
+        "manim_symbols.json"
+    ]
+    
+    for json_file in json_files:
+        if os.path.exists(json_file):
+            try:
+                with open(json_file, "r", encoding="utf-8") as f:
+                    data = f.read()
+                    if data.strip():  # Check if file is not empty
+                        print(f"✅ Loaded {json_file} ({len(data)} characters)")
+                        return data
+                    else:
+                        print(f"⚠️ {json_file} is empty, trying next file...")
+            except Exception as e:
+                print(f"⚠️ Error reading {json_file}: {e}")
+                continue
+    
+    # Fallback: Create a minimal symbols list
+    print("⚠️ No valid JSON files found, using fallback symbols")
+    fallback_symbols = {
+        "classes": ["Scene", "MovingCameraScene", "Line", "Circle", "Square", "Text", "Dot", "Arrow", "Rectangle", "Ellipse", "Triangle"],
+        "constants": ["UP", "DOWN", "LEFT", "RIGHT", "ORIGIN", "WHITE", "BLACK", "RED", "GREEN", "BLUE", "YELLOW", "PURPLE", "ORANGE"],
+        "methods": ["add", "remove", "play", "wait", "create", "fade_in", "fade_out", "move_to", "shift", "scale", "rotate"]
+    }
+    return json.dumps(fallback_symbols, indent=2)
 
-response = client.models.generate_content(
-    model='gemini-2.5-flash', contents=prompt_for_prompt
-)
-prompt_helper = response.text
-json_data = ""
-with open("manim_full_symbols_deep.json", "r") as f:
-    json_data = f.read()
-# === STEP 6: Prompt LLM ===
-prompt = prompt_helper + f"""\n
-Do not return backtick syntax either, just write the response as pure text.
-Make sure things do not overlap unless they are MEANT TO.
-Do not hallucinate types. to prevent you from hallucinating types, i have created a massive json file that includes ALL valid constants, classes, and methods you may use.
-The library was updated recently, so you defintely have functions in your memory or training data that are completely outdated, so refer to this to check if a function exists.
-The json data is:\n{json_data}
-"""
-# had to install latex distro because no matter how much i specified in the prompt, it kept using latex powered types.
+# Load the symbols data
+json_data = load_manim_symbols()
 
-old_prompt = f"""
-You are a Manim animation expert.
+# === STEP 6: Create a more focused and effective prompt ===
+def create_animation_prompt(query, context, symbols_data):
+    """Create a focused prompt that reduces hallucination"""
+    
+    # Limit the symbols data to prevent token overflow
+    if len(symbols_data) > 10000:
+        symbols_data = symbols_data[:10000] + "\\n... (truncated for length)"
+    
+    prompt = f"""You are a Manim animation expert. Create a Python animation for: "{query}"
 
-Here is some documentation about Manim:
+IMPORTANT RULES:
+1. Use ONLY these Manim classes and methods: {symbols_data}
+2. Do NOT use any classes or methods not listed above.
+3. Keep the animation simple, focused, and always visible within the frame.
+4. Use `MovingCameraScene` to control the view and ensure all elements are visible.
+5. Position objects relative to each other (e.g., `object2.next_to(object1, DOWN)`) or centered on the screen. Avoid large absolute coordinates like `shift(DOWN*5)`.
+6. At the start of the animation, you can use `self.camera.frame.scale(1.2)` to zoom out slightly if many objects are on screen.
 
-{context}
+Manim Documentation Context:
+{context[:2000]}  # Limit context length
 
-Now write Python code using Manim that animates a DNA double helix.
-Use sine curves for the backbones and lines for base pairs.
-Use only primitives like Line, ParametricFunction, Dot, Text, etc.
-Return only the full Python code. Do not explain anything.
+Create a Python script with:
+- A single class that inherits from `MovingCameraScene`.
+- A `construct()` method that creates animations that stay within the frame.
+- No explanations, just code.
 
-"""
+Return ONLY the Python code, no markdown formatting."""
 
-modelfamily_used = "gemini"
-model = "gemini-2.5-flash-lite-preview-06-17"
-response = client.models.generate_content(
-    model=model, contents=prompt
-)
-code = response.text
+    return prompt
 
-## Alternative: Use OpenAI/ChatGPT for the second prompt (o3 model has lucas suggested)
-#oa_client = OpenAI(api_key=open_ai_key)
-## Uncomment the lines below to use OpenAI instead of Gemini for the second prompt
-#response = oa_client.responses.create(
-#    model="gpt-4o",
-#    input=[
-#        {
-#        "role": "user",
-#        "content": [
-#            {
-#            "type": "input_text",
-#            "text": prompt
-#            }
-#        ]
-#        }
-#    ]
-#)
-#
-#code = response.choices[0].message.content
-print(code)
-# clean the response because the model keeps adding backtick/latex/md syntax for returning code blocks
-code = code.replace("```python", "")
-code = code.replace("```", "")
+# === STEP 7: Generate the animation code ===
+client = genai.Client(api_key=google_key)
 
-"""
-# === STEP 6: Call Ollama (local LLM) ===
-response = requests.post("http://localhost:11434/api/generate", json={
-    "model": OLLAMA_MODEL,
-    "prompt": prompt,
-    "stream": False
-})
+# Create the improved prompt
+prompt = create_animation_prompt(USER_QUERY, context, json_data)
 
-code = response.json()["response"]
-"""
-# === STEP 7: Save code ===
-file_name = f'test/generated_animation_code/{modelfamily_used}/{"_".join(USER_QUERY.split(" ")[:5])}.py'
-# Ensure directory exists for the output file
+print(f"🎬 Generating animation for: {USER_QUERY}")
+print(f"📝 Prompt length: {len(prompt)} characters")
+
+try:
+    response = client.models.generate_content(
+        model='gemini-2.0-flash-exp',  # Use a more recent model
+        contents=prompt,
+        config={
+            "temperature": 0.3,  # Lower temperature for more consistent output
+            "top_p": 0.8,
+            "top_k": 40,
+            "max_output_tokens": 4000,
+        }
+    )
+    
+    code = response.text
+    print("✅ Successfully generated animation code")
+    
+except Exception as e:
+    print(f"❌ Error generating code: {e}")
+    # Fallback to a simple template
+    code = f'''from manim import *
+
+class {USER_QUERY.replace(" ", "").replace("?", "")}Animation(Scene):
+    def construct(self):
+        # Title
+        title = Text("{USER_QUERY}", font_size=36)
+        self.play(Write(title))
+        self.wait(1)
+        
+        # Simple animation
+        circle = Circle(radius=1, color=BLUE)
+        self.play(Create(circle))
+        self.wait(1)
+        
+        # Clean up
+        self.play(FadeOut(title), FadeOut(circle))
+        self.wait(0.5)
+'''
+
+# Clean the response
+code = code.replace("```python", "").replace("```", "").strip()
+
+# Ensure the Manim wildcard import is present
+if "from manim import *" not in code:
+    code = f"from manim import *\\n\\n{code}"
+
+# === STEP 8: Save the generated code ===
+file_name = f'test/generated_animation_code/gemini/{"_".join(USER_QUERY.split(" ")[:5])}.py'
 os.makedirs(os.path.dirname(file_name), exist_ok=True)
-with open(file_name, "w") as f:
+
+with open(file_name, "w", encoding="utf-8") as f:
     f.write(code)
 
 print(f"✅ Manim animation code saved to: {file_name}")
 
-
-# === STEP 8: Optionally, run
-# Example: python3 -m manim -pql test/Whats_the_x-y_plane?_How.py CartesianPlanePlotting
-
+# === STEP 9: Extract class name and optionally run ===
 class_name = None
-
-# Try to extract the first class name from the generated code
 match = re.search(r'class\s+(\w+)\s*\(', code)
 if match:
     class_name = match.group(1)
+    print(f"✅ Found class name: {class_name}")
 else:
-    print("⚠️ Could not find a class name in the generated code. Please specify manually.")
+    print("⚠️ Could not find a class name in the generated code")
 
+# Optionally run the animation
 if class_name:
-    cmd = [
-        "python3", "-m", "manim", "-pql", file_name, class_name#, "-c MANIM_CONFIG"
-    ]
-    print(f"Running: {' '.join(cmd)}")
-    subprocess.run(cmd)
+    print(f"🎬 Running animation: {class_name}")
+    cmd = ["python3", "-m", "manim", "-pql", file_name, class_name]
+    print(f"Command: {' '.join(cmd)}")
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode == 0:
+            print("✅ Animation rendered successfully!")
+            # Extract output file paths
+            output_files = re.findall(r'Rendered (.+\.(mp4|gif|png))', result.stdout)
+            for file in output_files:
+                print(f"📹 Output file: {file}")
+        else:
+            print(f"❌ Animation failed: {result.stderr}")
+    except subprocess.TimeoutExpired:
+        print("⏰ Animation timed out")
+    except Exception as e:
+        print(f"❌ Error running animation: {e}")
 else:
-    print("Skipping manim run due to missing class name.")
+    print("⚠️ Skipping animation run due to missing class name")

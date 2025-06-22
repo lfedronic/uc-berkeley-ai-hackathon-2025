@@ -42,32 +42,43 @@ export async function generateAnimation(request: AnimationRequest): Promise<Anim
   const { query, model = 'gemini', autoRun = false, outputFormat = 'python' } = request;
 
   try {
-    console.log(`🎬 Generating animation for: "${query}"`);
+    console.log(`🎬 Starting animation generation for: "${query}"`);
+    console.log(`🔧 Debug: Model = ${model}, autoRun = ${autoRun}, outputFormat = ${outputFormat}`);
 
     // Step 1: Create a temporary Python script that calls rag_pipeline with the query
+    console.log(`🔧 Debug: About to call createTempScript...`);
     const tempScriptPath = await createTempScript(query, model);
+    console.log(`🔧 Debug: createTempScript completed, path = ${tempScriptPath}`);
     
     // Step 2: Execute the Python script
+    console.log(`🔧 Debug: About to call executePythonScript...`);
     const result = await executePythonScript(tempScriptPath, query);
+    console.log(`🔧 Debug: executePythonScript completed, code = ${result.code}`);
     
     // Step 3: Parse the results
+    console.log(`🔧 Debug: About to call parseAnimationResult...`);
     const response = await parseAnimationResult(result, query, model);
+    console.log(`🔧 Debug: parseAnimationResult completed, success = ${response.success}`);
     
     // Step 4: Optionally run the generated animation
     if (autoRun && response.success && response.pythonCode) {
+      console.log(`🔧 Debug: About to call runManimAnimation...`);
       const runResult = await runManimAnimation(response.filePath!, response.className!);
       response.outputFiles = runResult.outputFiles;
+      console.log(`🔧 Debug: runManimAnimation completed, success = ${runResult.success}`);
     }
 
     response.executionTime = Date.now() - startTime;
     
     // Clean up temporary files
+    console.log(`🔧 Debug: About to clean up temp files...`);
     await cleanupTempFiles(tempScriptPath);
+    console.log(`🔧 Debug: Cleanup completed`);
     
     return response;
 
   } catch (error) {
-    console.error('Error generating animation:', error);
+    console.error('❌ Error generating animation:', error);
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error occurred',
@@ -83,8 +94,8 @@ async function createTempScript(query: string, model: string): Promise<string> {
   const tempDir = path.join(process.cwd(), 'test', 'temp');
   const tempScriptPath = path.join(tempDir, `animation_${Date.now()}.py`);
   
-  // Read the original rag_pipeline.py
-  const originalScript = await readFile('test/rag_pipeline.py', 'utf-8');
+  // Read the original rag_pipeline_old.py
+  const originalScript = await readFile('test/rag_pipeline_old.py', 'utf-8');
   
   // Add command line argument parsing at the top of the script
   const importSection = `import os, json, requests
@@ -103,6 +114,19 @@ import subprocess
 import re
 from openai import OpenAI
 import sys
+
+# Load environment variables
+load_dotenv()
+
+# Get API keys
+google_key = os.getenv("GOOGLE_API_KEY")
+open_ai_key = os.getenv("OPENAI_API_KEY")
+
+# === CONFIG ===
+DOC_DIR = "manim_docs_old"
+RAW_CHUNKS_FILE = "test/temp/manim_doc_chunks.jsonl"
+VECTORSTORE_PATH = "test/temp/manim_vectorstore_free"
+OUTPUT_FILE = "test/generated_animation.py"
 
 # Parse command line arguments
 if len(sys.argv) > 1:
@@ -124,6 +148,16 @@ print(f"🎬 Generating animation for: {USER_QUERY}")
   if (!existsSync(tempDir)) {
     await mkdir(tempDir, { recursive: true });
   }
+  console.log('🔧 Debug: Creating temp script with query:', query);
+  console.log('🔧 Debug: Model being used:', model);
+  console.log('🔧 Debug: Temp script path:', tempScriptPath);
+  console.log('🔧 Debug: Temp directory exists:', existsSync(tempDir));
+  console.log('🔧 Debug: Original script length:', originalScript.length);
+  console.log('🔧 Debug: Modified script length:', modifiedScript.length);
+  console.log('🔧 Debug: Script modification successful:', modifiedScript !== originalScript);
+  
+  // Log a snippet of the modified script to verify content
+  console.log('🔧 Debug: Modified script preview (first 500 chars):', modifiedScript.substring(0, 500));
   await writeFile(tempScriptPath, modifiedScript);
   
   return tempScriptPath;
@@ -136,7 +170,8 @@ async function executePythonScript(scriptPath: string, query: string): Promise<{
   return new Promise((resolve, reject) => {
     const pythonProcess = spawn('python3', [scriptPath, query], {
       cwd: process.cwd(),
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env } // Pass all environment variables to the Python subprocess
     });
 
     let stdout = '';

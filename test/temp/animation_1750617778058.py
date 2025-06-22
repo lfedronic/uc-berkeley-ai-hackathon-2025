@@ -13,21 +13,24 @@ from bs4 import BeautifulSoup
 import subprocess
 import re
 from openai import OpenAI
+import sys
 
-
+# Load environment variables
 load_dotenv()  # loads from .env by default
 
-google_key = os.getenv("GOOGLE_KEY")
-open_ai_key = os.getenv("OPENAI_KEY")
+# Get API keys
+google_key = os.getenv("GOOGLE_API_KEY")
+open_ai_key = os.getenv("OPENAI_API_KEY")
 
-# === CONFIG ===
-DOC_DIR = "manim_docs_old"  # folder of .html pages downloaded with wget
-RAW_CHUNKS_FILE = "test/temp/manim_doc_chunks.jsonl"
-SPLIT_CHUNKS_FILE = "test/temp/split_manim_chunks.jsonl"
-VECTORSTORE_PATH = "test/temp/manim_vectorstore_free"
-OUTPUT_FILE = "test/generated_animation.py"
-OLLAMA_MODEL = "deepseek-coder"
-USER_QUERY = "What is quick sort?"
+# Parse command line arguments
+if len(sys.argv) > 1:
+    USER_QUERY = sys.argv[1]
+else:
+    USER_QUERY = "What is merge sort?"  # Default fallback
+
+print(f"🎬 Generating animation for: {USER_QUERY}")
+
+
 
 def extract_clean_text_from_html(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -51,41 +54,41 @@ def extract_clean_text_from_html(path):
 
 # === STEP 1: Extract <main> tags from HTML files ===
 
-
-def extract_main_content(folder_path):
-    chunks = []
-
-    for file in Path(folder_path).rglob("*.html"):
-        with open(file, "r", encoding="utf-8") as f:
-            soup = BeautifulSoup(f.read(), "html.parser")
-
-        # Try multiple selectors to find main content
-        main = (
-            soup.find("div", class_="main") or
-            soup.find("article") or
-            soup.find("div", class_="document")
-        )
-
-        if main:
-            # Remove clutter tags inside main
-            for tag in main.find_all(["nav", "aside", "footer", "script", "style"]):
-                tag.decompose()
-
-            text = main.get_text(separator="\n", strip=True)
-            if text.strip():  # Make sure it's not empty
-                chunks.append({"text": text, "source": str(file)})
-
-    return chunks
-
-if not os.path.exists(RAW_CHUNKS_FILE):
-    chunks = extract_main_content(DOC_DIR)
-    # Ensure directory exists for RAW_CHUNKS_FILE
-    os.makedirs(os.path.dirname(RAW_CHUNKS_FILE), exist_ok=True)
-    with open(RAW_CHUNKS_FILE, "w", encoding="utf-8") as f:
-        for chunk in chunks:
-            json.dump(chunk, f)
-            f.write("\n")
-    print(f"✅ Extracted {len(chunks)} <main> chunks from HTML")
+#
+#def extract_main_content(folder_path):
+#    chunks = []
+#
+#    for file in Path(folder_path).rglob("*.html"):
+#        with open(file, "r", encoding="utf-8") as f:
+#            soup = BeautifulSoup(f.read(), "html.parser")
+#
+#        # Try multiple selectors to find main content
+#        main = (
+#            soup.find("div", class_="main") or
+#            soup.find("article") or
+#            soup.find("div", class_="document")
+#        )
+#
+#        if main:
+#            # Remove clutter tags inside main
+#            for tag in main.find_all(["nav", "aside", "footer", "script", "style"]):
+#                tag.decompose()
+#
+#            text = main.get_text(separator="\n", strip=True)
+#            if text.strip():  # Make sure it's not empty
+#                chunks.append({"text": text, "source": str(file)})
+#
+#    return chunks
+#
+#if not os.path.exists(RAW_CHUNKS_FILE):
+#    chunks = extract_main_content(DOC_DIR)
+#    # Ensure directory exists for RAW_CHUNKS_FILE
+#    os.makedirs(os.path.dirname(RAW_CHUNKS_FILE), exist_ok=True)
+#    with open(RAW_CHUNKS_FILE, "w", encoding="utf-8") as f:
+#        for chunk in chunks:
+#            json.dump(chunk, f)
+#            f.write("\n")
+#    print(f"✅ Extracted {len(chunks)} <main> chunks from HTML")
 
 #with open(RAW_CHUNKS_FILE, "r", encoding="utf-8") as f:
 ## === STEP 2: Chunk text to ~1000 characters ===
@@ -262,17 +265,17 @@ while i < len(lines):
     line = lines[i]
     stripped = line.strip()
 
-    # Check if this is a line that starts a self.method call
-    if re.match(r"self\.\w+\s*\(", stripped):
+    # Detect start of a multiline method call (like self.play(... or self.add(...))
+    if re.match(r"self\.\w+\s*\($", stripped):
         indent = len(line) - len(stripped)
         indent_space = " " * indent
 
         # Start try block
         wrapped_lines.append(f"{indent_space}try:")
-
-        # Track parens to handle multiline method calls
-        paren_balance = stripped.count("(") - stripped.count(")")
         wrapped_lines.append(f"{indent_space}    {stripped}")
+
+        # Start tracking parentheses
+        paren_balance = 1
         i += 1
 
         while i < len(lines) and paren_balance > 0:
@@ -281,10 +284,9 @@ while i < len(lines):
             wrapped_lines.append(f"{indent_space}    {next_line.strip()}")
             i += 1
 
-        # Add except block
+        # Finish try-except
         wrapped_lines.append(f"{indent_space}except Exception as e:")
         wrapped_lines.append(f"{indent_space}    print(f'❌ Error: {{e}}')")
-
     else:
         wrapped_lines.append(line)
         i += 1
