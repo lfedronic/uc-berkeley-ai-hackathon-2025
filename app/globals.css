@@ -120,3 +120,19 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* FlexLayout containment overrides */
+.flexlayout__layout {
+  position: relative !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.flexlayout__splitter {
+  z-index: 1 !important;
+}
+
+.flexlayout__tabset {
+  position: relative !important;
+}
