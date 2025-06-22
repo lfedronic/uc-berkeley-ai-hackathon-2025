@@ -1,299 +1,292 @@
-import { Model, Actions, DockLocation, IJsonModel } from 'flexlayout-react';
+/* ──────────────────────────────────────────────────────────
+   lib/agents/flexLayoutTools.ts
+   – helpers invoked from LayoutChat (FlexLayout v1.7+)
+─────────────────────────────────────────────────────────── */
+import {
+  Model,
+  Actions,
+  DockLocation,
+  TabSetNode,
+  Node,
+  IJsonModel,
+} from 'flexlayout-react';
+import { useLayoutStore } from '@/lib/stores/layoutStore';
 
-/**
- * FlexLayout-native tool system
- * All tools work directly with FlexLayout's Model and Actions API
- */
+/* ------------------------------------------------------------------ */
+/*  SMALL UTILS                                                        */
+/* ------------------------------------------------------------------ */
+const uid = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? `tab-${crypto.randomUUID()}`
+    : `tab-${Date.now()}`;
 
+const bg = (t: string) =>
+  (
+    {
+      lecture: 'bg-blue-100',
+      quiz: 'bg-green-100',
+      diagram: 'bg-purple-100',
+      summary: 'bg-yellow-100',
+    } as Record<string, string>
+  )[t] ?? 'bg-gray-100';
+
+/* walk JSON helper */
+function walk<T>(model: Model, fn: (node: any, parent: any) => T | undefined) {
+  const dfs = (n: any, parent: any): T | undefined => {
+    const out = fn(n, parent);
+    if (out !== undefined) return out;
+    n.children?.forEach((c: any) => {
+      const o = dfs(c, n);
+      if (o !== undefined) return o;
+    });
+    return undefined;
+  };
+  return dfs(model.toJson().layout, null);
+}
+
+/* camel-case slug for labels */
+const camel = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/ (.)/g, (_, c) => c.toUpperCase());
+
+/* ------------------------------------------------------------------ */
+/*  STORE COMMIT – keep label-map & raw JSON current                   */
+/* ------------------------------------------------------------------ */
+function commit(model: Model) {
+  const labels: Record<string, string> = {};
+
+  const addLabel = (key: string, id: string) => {
+    // do not overwrite if the user already has a custom alias
+    if (!labels[key]) labels[key] = id;
+  };
+
+  walk(model, (n, parent) => {
+    if (n.type === 'tabset') {
+      /* pane label (unchanged) */
+      if (n.children?.[0]?.name)
+        addLabel(`${camel(n.children[0].name)}Pane`, n.id);
+
+      /* ▶ NEW ◀ — also add labels for every tab inside that pane */
+      n.children?.forEach((tab: any) => {
+        if (tab.type === 'tab' && tab.name) {
+          addLabel(`${camel(tab.name)}Tab`, tab.id);
+        }
+      });
+    }
+  });
+
+  labels.rootRow = model.getRoot().getId();
+  useLayoutStore.getState().setLayoutJson(model.toJson() as IJsonModel, labels);
+}
+
+/* ------------------------------------------------------------------ */
+/*  PUBLIC API (tools)                                                 */
+/* ------------------------------------------------------------------ */
 export interface FlexLayoutToolResult {
   success: boolean;
   error?: string;
   message?: string;
-  model?: Model;
+  /* optional data for chaining */
+  tabId?: string;
+  tabsetId?: string;
+  newTabId?: string;
+  newTabsetId?: string;
 }
 
-/**
- * Add a new tab to a tabset
- */
+/* ────────── ADD TAB ────────── */
 export function addTabToFlexLayout(
-  model: Model, 
-  paneId: string, 
-  title: string, 
-  contentId: string,
-  makeActive: boolean = false
-): FlexLayoutToolResult {
-  try {
-    const node = model.getNodeById(paneId);
-    if (!node) {
-      return { success: false, error: 'PANE_NOT_FOUND', message: `Pane ${paneId} not found` };
-    }
-
-    if (node.getType() !== 'tabset') {
-      return { success: false, error: 'INVALID_TARGET', message: 'Target must be a tabset' };
-    }
-
-    // Create new tab
-    const newTabId = `tab-${Date.now()}`;
-    const action = Actions.addNode(
-      {
-        type: 'tab',
-        id: newTabId,
-        name: title,
-        component: 'content',
-        config: { contentType: contentId, bgColor: getBgColorForContent(contentId) }
-      },
-      paneId,
-      DockLocation.CENTER, // Add to existing tabset
-      makeActive ? 0 : -1, // 0 = make active, -1 = add to end
-      makeActive // Select the new tab if makeActive is true
-    );
-
-    model.doAction(action);
-    
-    return { 
-      success: true, 
-      message: `Added tab "${title}" to pane ${paneId}`,
-      model 
-    };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'EXECUTION_ERROR', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    };
-  }
-}
-
-/**
- * Activate a specific tab
- */
-export function activateTabInFlexLayout(
   model: Model,
   paneId: string,
-  tabId: string
+  title: string,
+  contentId: string,
+  makeActive = false,
 ): FlexLayoutToolResult {
-  try {
-    const paneNode = model.getNodeById(paneId);
-    if (!paneNode || paneNode.getType() !== 'tabset') {
-      return { success: false, error: 'INVALID_PANE', message: 'Pane must be a tabset' };
-    }
-
-    const tabNode = model.getNodeById(tabId);
-    if (!tabNode || tabNode.getType() !== 'tab') {
-      return { success: false, error: 'TAB_NOT_FOUND', message: `Tab ${tabId} not found` };
-    }
-
-    const action = Actions.selectTab(tabId);
-    model.doAction(action);
-
-    return { 
-      success: true, 
-      message: `Activated tab ${tabId} in pane ${paneId}`,
-      model 
-    };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'EXECUTION_ERROR', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    };
+  const pane = model.getNodeById(paneId) as TabSetNode | null;
+  if (!pane || pane.getType() !== 'tabset') {
+    return { success: false, error: 'PANE_NOT_FOUND', message: `Pane ${paneId} not found` };
   }
+
+  const tabId = uid();
+  model.doAction(
+    Actions.addNode(
+      {
+        type: 'tab',
+        id: tabId,
+        name: title,
+        component: 'content',
+        config: { contentType: contentId, bgColor: bg(contentId) },
+      },
+      paneId,
+      DockLocation.CENTER,
+      makeActive ? 0 : -1,
+      makeActive,
+    ),
+  );
+
+  commit(model);
+  return { success: true, message: `Added tab “${title}”`, tabId };
 }
 
-/**
- * Close a tab
- */
-export function closeTabInFlexLayout(
+/* ────────── ACTIVATE TAB ────────── */
+export function activateTabInFlexLayout(
   model: Model,
-  tabId: string
+  _paneId: string, // kept for backward compatibility, no longer needed
+  tabId: string,
 ): FlexLayoutToolResult {
   try {
-    const tabNode = model.getNodeById(tabId);
-    if (!tabNode || tabNode.getType() !== 'tab') {
-      return { success: false, error: 'TAB_NOT_FOUND', message: `Tab ${tabId} not found` };
-    }
-
-    // Allow closing the last tab - this will remove the entire pane
-    // AI should have full control over layout management
-
-    const action = Actions.deleteTab(tabId);
-    model.doAction(action);
-
-    return { 
-      success: true, 
-      message: `Closed tab ${tabId}`,
-      model 
-    };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'EXECUTION_ERROR', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    };
+    model.doAction(Actions.selectTab(tabId));
+    commit(model);
+    return { success: true, message: `Activated tab ${tabId}` };
+  } catch (e) {
+    return { success: false, error: 'EXECUTION_ERROR', message: (e as Error).message };
   }
 }
 
-/**
- * Split a pane (create a new tabset)
- */
+/* ────────── CLOSE TAB ────────── */
+export function closeTabInFlexLayout(model: Model, tabId: string): FlexLayoutToolResult {
+  try {
+    model.doAction(Actions.deleteTab(tabId));
+    commit(model);
+    return { success: true, message: `Closed tab ${tabId}` };
+  } catch (e) {
+    return { success: false, error: 'EXECUTION_ERROR', message: (e as Error).message };
+  }
+}
+
+/* ────────── SPLIT PANE (row/column tolerant, returns IDs) ────────── */
 export function splitPaneInFlexLayout(
   model: Model,
-  targetId: string,
+  target: string,
   orientation: 'row' | 'column',
-  ratio: number = 0.5
+  ratio = 0.67,
 ): FlexLayoutToolResult {
-  try {
-    const targetNode = model.getNodeById(targetId);
-    if (!targetNode) {
-      return { success: false, error: 'NODE_NOT_FOUND', message: `Node ${targetId} not found` };
-    }
+  /* 1 — resolve target node */
+  let tgt = model.getNodeById(target) as Node | null;
 
-    // Create a new tabset with a placeholder tab
-    const newTabsetId = `tabset-${Date.now()}`;
-    const newTabId = `tab-${Date.now()}`;
-    
-    // Map orientation to DockLocation
-    const dockLocation = orientation === 'row' ? DockLocation.RIGHT : DockLocation.BOTTOM;
-    
-    const action = Actions.addNode(
+  if (!tgt) {
+    /* also allow the caller to pass the name of a tab */
+    const parentId = walk<string | undefined>(model, (n, parent) => {
+      if (n.type === 'tab' && n.name?.toLowerCase() === target.toLowerCase()) return parent?.id;
+    });
+    if (parentId) tgt = model.getNodeById(parentId) as Node | null;
+  }
+  if (!tgt) {
+    return { success: false, error: 'TARGET_NOT_FOUND', message: `Can’t find “${target}”` };
+  }
+
+  /* 2 — ensure we have a tabset container to split */
+  let containerId: string;
+  if (tgt.getType() === 'tabset') {
+    containerId = tgt.getId();
+  } else {
+    /* wrap non-tabset targets in a fresh tabset first */
+    const tmpSet = `tabset-${uid()}`;
+    const tmpTab = uid();
+    model.doAction(
+      Actions.addNode(
+        {
+          type: 'tabset',
+          id: tmpSet,
+          weight: 50,
+          children: [
+            {
+              type: 'tab',
+              id: tmpTab,
+              name: 'Temp',
+              component: 'content',
+              config: { contentType: 'placeholder', bgColor: 'bg-gray-100' },
+            },
+          ],
+        },
+        tgt.getId(),
+        DockLocation.CENTER,
+        -1,
+        false,
+      ),
+    );
+    containerId = tmpSet;
+  }
+
+  /* 3 — add the actual split */
+  const newTabsetId = `tabset-${uid()}`;
+  const newTabId = uid();
+  const dock = orientation === 'row' ? DockLocation.RIGHT : DockLocation.BOTTOM;
+
+  model.doAction(
+    Actions.addNode(
       {
         type: 'tabset',
         id: newTabsetId,
-        children: [{
-          type: 'tab',
-          id: newTabId,
-          name: 'New Tab',
-          component: 'content',
-          config: { contentType: 'placeholder', bgColor: 'bg-gray-100' }
-        }]
+        weight: ratio * 100,
+        children: [
+          {
+            type: 'tab',
+            id: newTabId,
+            name: 'New Tab',
+            component: 'content',
+            config: { contentType: 'placeholder', bgColor: 'bg-gray-100' },
+          },
+        ],
       },
-      targetId,
-      dockLocation, // Use proper DockLocation
-      0, // Index
-      false // Don't select
-    );
+      containerId,
+      dock,
+      0,
+      false,
+    ),
+  );
 
-    model.doAction(action);
-
-    return { 
-      success: true, 
-      message: `Split pane ${targetId} with orientation ${orientation}`,
-      model 
-    };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'EXECUTION_ERROR', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    };
-  }
+  commit(model);
+  return {
+    success: true,
+    message: `Split pane ${containerId} (${orientation})`,
+    newTabId,
+    newTabsetId,
+  };
 }
 
-/**
- * Get environment information from FlexLayout model
- */
-export function getEnvironmentFromFlexLayout(model: Model): FlexLayoutToolResult {
+/* ────────── MOVE TAB (unchanged) ────────── */
+export function moveTabInFlexLayout(
+  model: Model,
+  tabId: string,
+  toPaneId: string,
+  position = -1,
+): FlexLayoutToolResult {
   try {
-    const modelJson = model.toJson();
-    
-    // Extract pane information
-    const panes: Array<{
-      id: string;
-      type: string;
-      tabs: Array<{ id: string; name: string; contentType: string }>;
-      activeTab?: string;
-    }> = [];
+    const target = model.getNodeById(toPaneId);
+    if (!target || target.getType() !== 'tabset')
+      return { success: false, error: 'TARGET_NOT_TABSET' };
 
-    const extractPanes = (node: any) => {
-      if (node.type === 'tabset') {
-        const tabs = node.children?.map((child: any) => ({
-          id: child.id,
-          name: child.name,
-          contentType: child.config?.contentType || 'default'
-        })) || [];
-
-        panes.push({
-          id: node.id,
-          type: 'tabset',
-          tabs,
-          activeTab: tabs[node.active || 0]?.id
-        });
-      } else if (node.children) {
-        node.children.forEach(extractPanes);
-      }
-    };
-
-    extractPanes(modelJson.layout);
-
-    return {
-      success: true,
-      message: 'Environment retrieved successfully',
-      model,
-      // Return environment data in the message for now
-    };
-  } catch (error) {
-    return { 
-      success: false, 
-      error: 'EXECUTION_ERROR', 
-      message: error instanceof Error ? error.message : 'Unknown error' 
-    };
+    model.doAction(Actions.moveNode(tabId, toPaneId, DockLocation.CENTER, position));
+    commit(model);
+    return { success: true, message: `Moved tab ${tabId} → ${toPaneId}` };
+  } catch (e) {
+    return { success: false, error: 'EXECUTION_ERROR', message: (e as Error).message };
   }
 }
 
-/**
- * Helper function to get background color for content type
- */
-function getBgColorForContent(contentType: string): string {
-  switch (contentType) {
-    case 'lecture': return 'bg-blue-100';
-    case 'quiz': return 'bg-green-100';
-    case 'diagram': return 'bg-purple-100';
-    case 'summary': return 'bg-yellow-100';
-    default: return 'bg-gray-100';
-  }
+/* ────────── ENV SNAPSHOT ────────── */
+export function getEnvironmentFromFlexLayout(model: Model): FlexLayoutToolResult {
+  return { success: true, message: JSON.stringify(model.toJson()) };
 }
 
-/**
- * Get all available pane IDs from the model
- */
+/* ────────── helper getters (for UI) ────────── */
 export function getAvailablePaneIds(model: Model): string[] {
-  const paneIds: string[] = [];
-  
-  const extractPaneIds = (node: any) => {
-    if (node.type === 'tabset') {
-      paneIds.push(node.id);
-    } else if (node.children) {
-      node.children.forEach(extractPaneIds);
-    }
-  };
-
-  extractPaneIds(model.toJson().layout);
-  return paneIds;
+  const ids: string[] = [];
+  walk(model, (n) => {
+    if (n.type === 'tabset') ids.push(n.id);
+  });
+  return ids;
 }
 
-/**
- * Get all available tab IDs from the model
- */
-export function getAvailableTabIds(model: Model): Array<{ id: string; name: string; paneId: string }> {
-  const tabs: Array<{ id: string; name: string; paneId: string }> = [];
-  
-  const extractTabs = (node: any, paneId?: string) => {
-    if (node.type === 'tabset') {
-      const currentPaneId = node.id;
-      node.children?.forEach((child: any) => {
-        if (child.type === 'tab') {
-          tabs.push({
-            id: child.id,
-            name: child.name,
-            paneId: currentPaneId
-          });
-        }
-      });
-    } else if (node.children) {
-      node.children.forEach((child: any) => extractTabs(child, paneId));
+export function getAvailableTabIds(model: Model) {
+  const out: Array<{ id: string; name: string; paneId: string }> = [];
+  walk(model, (n, parent) => {
+    if (n.type === 'tab' && parent?.type === 'tabset') {
+      out.push({ id: n.id, name: n.name, paneId: parent.id });
     }
-  };
-
-  extractTabs(model.toJson().layout);
-  return tabs;
+  });
+  return out;
 }

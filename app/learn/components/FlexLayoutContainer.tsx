@@ -3,7 +3,9 @@
 import React, { useEffect, useRef } from 'react';
 import { Layout, Model, TabNode, IJsonModel, Actions, DockLocation } from 'flexlayout-react';
 import 'flexlayout-react/style/light.css';
-import ResizeObserverComponent from './ResizeObserver';
+import { useLayoutStore } from '@/lib/stores/layoutStore';    // unchanged path
+import { buildLabelMap } from '@/lib/stores/layoutStore';
+
 
 // Initial layout configuration - starts with a welcome tab, more tabs added dynamically via chat
 const initialModel: IJsonModel = {
@@ -123,7 +125,6 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
         return 'Default Content\n\nPlaceholder content for this pane.';
     }
   };
-
   return (
     <div className={`h-full w-full p-4 ${bgColor} flex flex-col`}>
       <h2 className="text-lg font-semibold mb-4 text-gray-800">
@@ -133,27 +134,26 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
         {getPlaceholderText(contentType)}
       </div>
       <div className="mt-4 text-xs text-gray-500">
-        Pane ID: {node.getId()} | Type: {contentType}
+        Pane&nbsp;ID: {node.getId()} | Type: {contentType ?? 'default'}
       </div>
     </div>
   );
 };
 
-// Global model reference for tools to access
+/* ---------- component ---------- */
 let globalModel: Model | null = null;
 
+
 const FlexLayoutContainer: React.FC = () => {
-  const [model, setModel] = React.useState<Model | null>(null);
-  const modelRef = useRef<Model | null>(null);
+  const [model, setModel] = useState<Model | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
+  const { updateEnv, setLayoutJson } = useLayoutStore(); // 🆕 simpler selector
 
   useEffect(() => {
-    // Initialize the FlexLayout model - this is now our single source of truth
-    const newModel = Model.fromJson(initialModel);
-    setModel(newModel);
-    modelRef.current = newModel;
-    globalModel = newModel; // Make available to tools
-    
-    console.log('✅ FlexLayout initialized as single source of truth');
+    const m = Model.fromJson(initialModel);
+    setModel(m);
+    globalModel = m;
+    refreshLabelsAndJson(m);
   }, []);
 
   // Handler for when summary content is generated (same logic as test-chat)
@@ -378,7 +378,7 @@ const FlexLayoutContainer: React.FC = () => {
     } catch (error) {
       console.warn('Failed to save layout:', error);
     }
-  };
+  }, [model, updateEnv]);
 
   if (!model) {
     return <div className="flex items-center justify-center h-full">Loading layout...</div>;
@@ -411,13 +411,12 @@ const FlexLayoutContainer: React.FC = () => {
           onWebpageUpdate={handleWebpageUpdate}
         />
       </div>
-    </ResizeObserverComponent>
-  );
+    ) : (
+      <div>Unknown component {n.getComponent()}</div>
+    );
+
+  return <div ref={ref} className="h-full w-full overflow-hidden"><Layout model={model} factory={factory} onModelChange={onModelChange} /></div>;
 };
 
-// Export function to get current model for tools
-export function getCurrentFlexLayoutModel(): Model | null {
-  return globalModel;
-}
-
+export function getCurrentFlexLayoutModel() { return globalModel; }
 export default FlexLayoutContainer;
