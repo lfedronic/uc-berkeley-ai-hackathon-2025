@@ -250,9 +250,7 @@ export class FileProcessor {
 
 		try {
 			if (mimeType === "application/pdf") {
-				// Temporarily disabled PDF processing due to library issues
-				console.log("PDF processing temporarily disabled");
-				processedFiles = [];
+				processedFiles = await this.processPDF(originalDestPath, folderPath);
 			} else if (
 				mimeType ===
 					"application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
