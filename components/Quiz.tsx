@@ -35,6 +35,12 @@ export default function Quiz({ quiz, onComplete }: QuizProps) {
   };
 
   const checkAnswer = (question: QuizQuestion, userAnswer: string): boolean => {
+    // Handle case where correctAnswer might be undefined or not a string
+    if (!question.correctAnswer || typeof question.correctAnswer !== 'string') {
+      console.warn('Missing or invalid correctAnswer for question:', question.id);
+      return false;
+    }
+    
     const correctAnswer = question.correctAnswer.toLowerCase().trim();
     const userAnswerNormalized = userAnswer.toLowerCase().trim();
 
