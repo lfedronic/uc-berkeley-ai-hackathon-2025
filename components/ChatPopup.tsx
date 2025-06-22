@@ -1,12 +1,22 @@
 'use client';
 
 import { useChat } from '@ai-sdk/react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { X, MessageCircle } from 'lucide-react';
 
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 import { GeneratedDiagram } from '@/lib/agents/diagramAgent';
 import { GeneratedWebpage } from '@/lib/agents/webpageAgent';
+import {
+  addTabToFlexLayout,
+  activateTabInFlexLayout,
+  closeTabInFlexLayout,
+  splitPaneInFlexLayout,
+  getEnvironmentFromFlexLayout,
+  moveTabInFlexLayout,
+} from '@/lib/agents/flexLayoutTools';
+import { getCurrentFlexLayoutModel } from '@/app/learn/components/FlexLayoutContainer';
+import { useLayoutStore } from '@/lib/stores/layoutStore';
 
 interface ChatPopupProps {
   onLessonUpdate?: (content: string) => void;
@@ -17,8 +27,89 @@ interface ChatPopupProps {
 
 export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdate, onWebpageUpdate }: ChatPopupProps) {
   const [isOpen, setIsOpen] = useState(false);
+  
+  // Access live label map for layout management
+  const labels = useLayoutStore((s) => s.labels);
+  const resolveLabel = (label: string) => labels[label] || null;
+
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
+    
+    // Supply fresh headers with label map for layout management
+    headers: useMemo(() => ({
+      'X-Layout-Labels': encodeURIComponent(JSON.stringify(labels)),
+    }), [labels]),
+
+    // Handle layout tool calls on the client side
+    onToolCall: async ({ toolCall }) => {
+      const { toolName, args } = toolCall;
+      
+      // Only handle layout management tools here
+      if (!['addTab', 'activateTab', 'closeTab', 'splitPane', 'getEnv', 'moveTab'].includes(toolName)) {
+        return; // Let server handle educational content tools
+      }
+
+      // Map any string arg equal to a label-key → its id
+      const mapArg = (v: unknown) =>
+        typeof v === 'string' && resolveLabel(v) ? resolveLabel(v) : v;
+      const mappedArgs: Record<string, unknown> = Object.fromEntries(
+        Object.entries(args as Record<string, unknown>).map(([k, v]) => [k, mapArg(v)]),
+      );
+
+      // Get current model reference
+      const model = getCurrentFlexLayoutModel();
+      if (!model) {
+        return { success: false, error: 'MODEL_NULL' };
+      }
+
+      // Dispatch to helper functions
+      let result;
+      switch (toolName) {
+        case 'getEnv':
+          result = getEnvironmentFromFlexLayout(model);
+          break;
+        case 'addTab':
+          result = addTabToFlexLayout(
+            model,
+            mappedArgs.paneId as string,
+            mappedArgs.title as string,
+            mappedArgs.contentId as string,
+            (mappedArgs.makeActive as boolean) ?? false,
+          );
+          break;
+        case 'activateTab':
+          result = activateTabInFlexLayout(
+            model,
+            mappedArgs.paneId as string,
+            mappedArgs.tabId as string,
+          );
+          break;
+        case 'closeTab':
+          result = closeTabInFlexLayout(model, mappedArgs.tabId as string);
+          break;
+        case 'splitPane':
+          result = splitPaneInFlexLayout(
+            model,
+            mappedArgs.targetId as string,
+            mappedArgs.orientation as 'row' | 'column',
+            (mappedArgs.ratio as number) ?? 0.5,
+          );
+          break;
+        case 'moveTab':
+          result = moveTabInFlexLayout(
+            model,
+            mappedArgs.tabId as string,
+            mappedArgs.toPane as string,
+            (mappedArgs.position as number) ?? -1,
+          );
+          break;
+        default:
+          result = { success: false, error: `Unknown tool ${toolName}` };
+      }
+
+      return result;
+    },
+
     onFinish: (message) => {
       // Check for summary results
       const summaryResults = message.toolInvocations?.filter(
@@ -102,15 +193,15 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdat
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 && (
               <div className="text-center text-gray-500 mt-8">
-                <p className="text-sm">Ask me to create summaries, lesson plans, quizzes, or diagrams!</p>
+                <p className="text-sm">Ask me to create educational content and manage your layout!</p>
                 <div className="mt-4 space-y-2 text-xs text-gray-400">
                   <p>• &quot;Can you give me a summary of photosynthesis?&quot;</p>
-                  <p>• &quot;Create a lesson plan for basic algebra&quot;</p>
-                  <p>• &quot;Generate a quiz on JavaScript fundamentals&quot;</p>
+                  <p>• &quot;Create a quiz on JavaScript and split the screen&quot;</p>
                   <p>• &quot;Show me a diagram of the water cycle&quot;</p>
-                  <p>• &quot;Create an interactive demo of context switching&quot;</p>
-                  <p>• &quot;Build a physics simulation for pendulum motion&quot;</p>
-                  <p>• &quot;Make a Python chart showing data distributions&quot;</p>
+                  <p>• &quot;Split the screen vertically&quot;</p>
+                  <p>• &quot;Add a new tab for notes&quot;</p>
+                  <p>• &quot;Create a lesson plan and organize the layout&quot;</p>
+                  <p>• &quot;Build a physics simulation in a new tab&quot;</p>
                 </div>
               </div>
             )}
@@ -196,6 +287,92 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdat
                               🔄 Building interactive demo for {tool.args?.concept}...
                             </div>
                           )}
+                          {/* Layout Management Tool Feedback */}
+                          {tool.state === 'result' && tool.toolName === 'addTab' && (
+                            <div className="text-green-600">
+                              ✓ Added tab &quot;{tool.args?.title}&quot;
+                              {tool.result?.success && (
+                                <div className="text-blue-600 mt-1">
+                                  Tab created in layout!
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'addTab' && (
+                            <div className="text-orange-600">
+                              🔄 Adding tab &quot;{tool.args?.title}&quot;...
+                            </div>
+                          )}
+                          {tool.state === 'result' && tool.toolName === 'splitPane' && (
+                            <div className="text-green-600">
+                              ✓ Split pane {tool.args?.orientation}
+                              {tool.result?.success && (
+                                <div className="text-blue-600 mt-1">
+                                  Layout updated!
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'splitPane' && (
+                            <div className="text-orange-600">
+                              🔄 Splitting pane...
+                            </div>
+                          )}
+                          {tool.state === 'result' && tool.toolName === 'closeTab' && (
+                            <div className="text-green-600">
+                              ✓ Closed tab
+                              {tool.result?.success && (
+                                <div className="text-blue-600 mt-1">
+                                  Tab removed from layout!
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'closeTab' && (
+                            <div className="text-orange-600">
+                              🔄 Closing tab...
+                            </div>
+                          )}
+                          {tool.state === 'result' && tool.toolName === 'activateTab' && (
+                            <div className="text-green-600">
+                              ✓ Activated tab
+                              {tool.result?.success && (
+                                <div className="text-blue-600 mt-1">
+                                  Tab focused!
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'activateTab' && (
+                            <div className="text-orange-600">
+                              🔄 Activating tab...
+                            </div>
+                          )}
+                          {tool.state === 'result' && tool.toolName === 'moveTab' && (
+                            <div className="text-green-600">
+                              ✓ Moved tab
+                              {tool.result?.success && (
+                                <div className="text-blue-600 mt-1">
+                                  Tab relocated!
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'moveTab' && (
+                            <div className="text-orange-600">
+                              🔄 Moving tab...
+                            </div>
+                          )}
+                          {tool.state === 'result' && tool.toolName === 'getEnv' && (
+                            <div className="text-green-600">
+                              ✓ Retrieved layout environment
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'getEnv' && (
+                            <div className="text-orange-600">
+                              🔄 Getting layout info...
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -222,7 +399,7 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdat
               <input
                 value={input}
                 onChange={handleInputChange}
-                placeholder="Ask for a summary or lesson plan..."
+                placeholder="Ask for content or layout changes..."
                 className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={isLoading}
               />
@@ -239,4 +416,4 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdat
       )}
     </>
   );
-} 
+}

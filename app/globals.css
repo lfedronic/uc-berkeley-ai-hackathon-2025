@@ -122,7 +122,7 @@
 }
 
 /* FlexLayout containment overrides */
-.flexlayout__layout {
+/* .flexlayout__layout {
   position: relative !important;
   height: 100% !important;
   max-height: 100% !important;
@@ -135,4 +135,4 @@
 
 .flexlayout__tabset {
   position: relative !important;
-}
+} */
