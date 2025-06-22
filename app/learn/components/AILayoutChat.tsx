@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useRef, useEffect } from 'react';
+import { useChat } from 'ai/react';
 import { getCurrentFlexLayoutModel } from './FlexLayoutContainer';
 import { 
   addTabToFlexLayout, 
@@ -11,35 +12,238 @@ import {
   getAvailableTabIds
 } from '@/lib/agents/flexLayoutTools';
 
-interface ToolResult {
-  result?: {
-    action?: string;
-    success?: boolean;
-    message?: string;
-    error?: string;
-  };
-}
-
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  timestamp: Date;
-  toolResults?: ToolResult[];
-}
-
 const AILayoutChat: React.FC = () => {
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Hi! I can help you control the layout using natural language. Try commands like:\n\n• "Add a new quiz tab to the top-left pane"\n• "Split the diagram pane vertically"\n• "Switch to the summary tab"\n• "Show me the current layout"',
-      timestamp: new Date()
-    }
-  ]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Collect current layout state for context
+  const collectLayoutState = () => {
+    const model = getCurrentFlexLayoutModel();
+    if (!model) return null;
+
+    const availablePanes = getAvailablePaneIds(model);
+    const availableTabs = getAvailableTabIds(model);
+    
+    return {
+      availablePanes,
+      availableTabs,
+      totalPanes: availablePanes.length,
+      totalTabs: availableTabs.length
+    };
+  };
+
+  // Create semantic mapping from friendly names to actual IDs
+  const createSemanticMapping = () => {
+    const layoutState = collectLayoutState();
+    if (!layoutState) return { paneMapping: {}, tabMapping: {} };
+
+    const paneMapping: Record<string, string> = {};
+    const tabMapping: Record<string, string> = {};
+
+    // Group tabs by pane
+    const paneToTabs: Record<string, any[]> = {};
+    layoutState.availableTabs.forEach((tab: any) => {
+      if (!paneToTabs[tab.paneId]) {
+        paneToTabs[tab.paneId] = [];
+      }
+      paneToTabs[tab.paneId].push(tab);
+    });
+
+    // Create semantic mappings
+    layoutState.availablePanes.forEach((paneId: string) => {
+      const tabs = paneToTabs[paneId] || [];
+      const primaryTab = tabs[0];
+      
+      if (primaryTab) {
+        const contentType = primaryTab.name.toLowerCase();
+        let semanticPaneName = '';
+        
+        if (contentType.includes('lecture')) {
+          semanticPaneName = 'lecture-pane';
+        } else if (contentType.includes('quiz')) {
+          semanticPaneName = 'quiz-pane';
+        } else if (contentType.includes('diagram')) {
+          semanticPaneName = 'diagram-pane';
+        } else if (contentType.includes('summary')) {
+          semanticPaneName = 'summary-pane';
+        } else {
+          semanticPaneName = `${contentType}-pane`;
+        }
+        
+        paneMapping[semanticPaneName] = paneId;
+        
+        // Map individual tabs
+        tabs.forEach(tab => {
+          const tabName = tab.name.toLowerCase().replace(/\s+/g, '-');
+          tabMapping[`${tabName}-tab`] = tab.id;
+        });
+      }
+    });
+
+    return { paneMapping, tabMapping };
+  };
+
+  const { messages, input, handleInputChange, handleSubmit, isLoading, addToolResult } = useChat({
+    api: '/api/layout-agent',
+    onToolCall: async ({ toolCall }) => {
+      console.log('🔧 Tool call received:', toolCall);
+      
+      if (toolCall.toolName === 'layout') {
+        const args = toolCall.args as {
+          action: string;
+          paneId?: string;
+          title?: string;
+          contentId?: string;
+          makeActive?: boolean;
+          tabId?: string;
+          orientation?: string;
+          ratio?: number;
+        };
+        const { action, paneId, title, contentId, makeActive, tabId, orientation, ratio } = args;
+        console.log('🔧 Executing layout action:', { action, paneId, title, contentId, makeActive, tabId, orientation, ratio });
+        
+        const model = getCurrentFlexLayoutModel();
+        if (!model) {
+          console.log('❌ FlexLayout model not available');
+          addToolResult({
+            toolCallId: toolCall.toolCallId,
+            result: { success: false, error: 'Layout model not available' }
+          });
+          return;
+        }
+
+        try {
+          let result;
+          
+          // Get semantic mappings
+          const { paneMapping, tabMapping } = createSemanticMapping();
+          console.log('🗺️ Semantic mappings:', { paneMapping, tabMapping });
+          
+          // Helper function to resolve semantic names to actual IDs
+          const resolvePaneId = (inputPaneId: string) => {
+            // Check if it's a semantic name
+            if (paneMapping[inputPaneId]) {
+              console.log(`🔄 Resolved semantic pane "${inputPaneId}" to ID: ${paneMapping[inputPaneId]}`);
+              return paneMapping[inputPaneId];
+            }
+            
+            // Check if it's already a valid pane ID
+            const layoutState = collectLayoutState();
+            if (layoutState?.availablePanes.includes(inputPaneId)) {
+              return inputPaneId;
+            }
+            
+            // Try partial matching as fallback
+            const matchingTab = layoutState?.availableTabs.find(tab => 
+              tab.name.toLowerCase().includes(inputPaneId.toLowerCase())
+            );
+            
+            if (matchingTab) {
+              console.log(`🔄 Fallback resolved "${inputPaneId}" to pane ID: ${matchingTab.paneId}`);
+              return matchingTab.paneId;
+            }
+            
+            console.log(`⚠️ Could not resolve pane ID: ${inputPaneId}`);
+            return inputPaneId;
+          };
+
+          const resolveTabId = (inputTabId: string) => {
+            // Check if it's a semantic name
+            if (tabMapping[inputTabId]) {
+              console.log(`🔄 Resolved semantic tab "${inputTabId}" to ID: ${tabMapping[inputTabId]}`);
+              return tabMapping[inputTabId];
+            }
+            
+            // Check if it's already a valid tab ID
+            const layoutState = collectLayoutState();
+            if (layoutState?.availableTabs.some(tab => tab.id === inputTabId)) {
+              return inputTabId;
+            }
+            
+            // Try partial matching as fallback
+            const matchingTab = layoutState?.availableTabs.find(tab => 
+              tab.name.toLowerCase().includes(inputTabId.toLowerCase())
+            );
+            
+            if (matchingTab) {
+              console.log(`🔄 Fallback resolved "${inputTabId}" to tab ID: ${matchingTab.id}`);
+              return matchingTab.id;
+            }
+            
+            console.log(`⚠️ Could not resolve tab ID: ${inputTabId}`);
+            return inputTabId;
+          };
+          
+          switch (action) {
+            case 'addTab':
+              if (!paneId || !title || !contentId) {
+                result = { success: false, error: 'Missing required parameters for addTab' };
+                break;
+              }
+              const resolvedPaneId = resolvePaneId(paneId);
+              result = addTabToFlexLayout(model, resolvedPaneId, title, contentId, makeActive ?? true);
+              break;
+              
+            case 'activateTab':
+              if (!paneId || !tabId) {
+                result = { success: false, error: 'Missing required parameters for activateTab' };
+                break;
+              }
+              const resolvedActivePaneId = resolvePaneId(paneId);
+              const resolvedActiveTabId = resolveTabId(tabId);
+              result = activateTabInFlexLayout(model, resolvedActivePaneId, resolvedActiveTabId);
+              break;
+              
+            case 'closeTab':
+              if (!tabId) {
+                result = { success: false, error: 'Missing required parameter tabId for closeTab' };
+                break;
+              }
+              const resolvedCloseTabId = resolveTabId(tabId);
+              result = closeTabInFlexLayout(model, resolvedCloseTabId);
+              break;
+              
+            case 'split':
+              if (!paneId || !orientation) {
+                result = { success: false, error: 'Missing required parameters for split' };
+                break;
+              }
+              const resolvedSplitPaneId = resolvePaneId(paneId);
+              result = splitPaneInFlexLayout(model, resolvedSplitPaneId, orientation as 'row' | 'column', ratio ?? 0.5);
+              break;
+              
+            case 'getEnv':
+              const layoutState = collectLayoutState();
+              result = {
+                success: true,
+                message: 'Current layout environment',
+                environment: layoutState
+              };
+              break;
+              
+            default:
+              result = { success: false, error: `Unknown action: ${action}` };
+          }
+          
+          console.log('✅ Layout action result:', result);
+          addToolResult({
+            toolCallId: toolCall.toolCallId,
+            result
+          });
+          
+        } catch (error) {
+          console.error('💥 Layout action error:', error);
+          addToolResult({
+            toolCallId: toolCall.toolCallId,
+            result: { 
+              success: false, 
+              error: 'Execution error',
+              details: error instanceof Error ? error.message : 'Unknown error'
+            }
+          });
+        }
+      }
+    },
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -49,226 +253,21 @@ const AILayoutChat: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
-  const sendMessage = async () => {
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input.trim(),
-      timestamp: new Date()
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
-
-    try {
-      console.log('🚀 AILayoutChat: Starting sendMessage');
-      console.log('🌐 Current URL:', window.location.href);
-      console.log('📝 User message:', userMessage.content);
-
-      // Get current layout state
-      console.log('🔍 Getting FlexLayout model...');
-      const model = getCurrentFlexLayoutModel();
-      if (!model) {
-        console.log('❌ FlexLayout model not available');
-        const errorMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: 'Sorry, the layout system is not available right now.',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, errorMessage]);
-        setIsLoading(false);
-        return;
-      }
-
-      console.log('✅ FlexLayout model obtained');
-      const availablePanes = getAvailablePaneIds(model);
-      const availableTabs = getAvailableTabIds(model);
-      
-      const layoutState = {
-        availablePanes,
-        availableTabs,
-        totalPanes: availablePanes.length,
-        totalTabs: availableTabs.length
-      };
-
-      console.log('📊 Layout state:', layoutState);
-
-      const requestData = {
-        message: userMessage.content,
-        layoutState
-      };
-
-      console.log('📦 Request data to send:', requestData);
-      console.log('🌐 Fetch URL: /api/layout-agent');
-      console.log('🌐 Full URL would be:', `${window.location.origin}/api/layout-agent`);
-
-      console.log('📡 Making fetch request...');
-      const response = await fetch('/api/layout-agent', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData)
-      });
-
-      console.log('📡 Response received');
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
-      console.log('📡 Response headers:', Object.fromEntries(response.headers.entries()));
-
-      if (!response.ok) {
-        console.log('❌ Response not ok, response text:', await response.text());
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      console.log('📦 Parsing response JSON...');
-      const data = await response.json();
-      console.log('📦 Response data:', data);
-
-      if (data.success) {
-        // Execute any commands returned by the AI
-        const executionResults: string[] = [];
-        
-        if (data.toolResults && data.toolResults.length > 0) {
-          for (const toolResult of data.toolResults) {
-            const command = toolResult.result?.command;
-            if (command) {
-              const execResult = await executeLayoutCommand(command);
-              if (execResult) {
-                executionResults.push(execResult);
-              }
-            }
-          }
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Collect current layout state to send as context
+    const layoutState = collectLayoutState();
+    console.log('📊 Sending layout state:', layoutState);
+    
+    // Submit with context - using data parameter for additional context
+    handleSubmit(e, {
+      data: {
+        context: {
+          layoutState
         }
-
-        let assistantContent = data.response;
-        if (executionResults.length > 0) {
-          assistantContent += '\n\nExecution results:\n' + executionResults.join('\n');
-        }
-
-        const assistantMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: assistantContent,
-          timestamp: new Date(),
-          toolResults: data.toolResults
-        };
-
-        setMessages(prev => [...prev, assistantMessage]);
-      } else {
-        const errorMessage: ChatMessage = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: `Sorry, I encountered an error: ${data.error}${data.details ? ` (${data.details})` : ''}`,
-          timestamp: new Date()
-        };
-
-        setMessages(prev => [...prev, errorMessage]);
       }
-    } catch (error) {
-      console.error('💥 AILayoutChat error:', error);
-      console.error('💥 Error details:', error instanceof Error ? error.message : 'Unknown error');
-      console.error('💥 Error stack:', error instanceof Error ? error.stack : 'No stack');
-      
-      const errorMessage: ChatMessage = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        content: `Sorry, I couldn't process your request. Error: ${error instanceof Error ? error.message : 'Unknown error'}. Please check your connection and try again.`,
-        timestamp: new Date()
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const executeLayoutCommand = async (command: {
-    action: string;
-    paneId?: string;
-    title?: string;
-    contentId?: string;
-    makeActive?: boolean;
-    tabId?: string;
-    orientation?: string;
-    ratio?: number;
-  }): Promise<string | null> => {
-    const model = getCurrentFlexLayoutModel();
-    if (!model) return 'Layout model not available';
-
-    try {
-      let result;
-      
-      switch (command.action) {
-        case 'addTab':
-          if (!command.paneId || !command.title || !command.contentId) {
-            return '✗ Missing required parameters for addTab';
-          }
-          result = addTabToFlexLayout(
-            model,
-            command.paneId,
-            command.title,
-            command.contentId,
-            command.makeActive ?? true
-          );
-          break;
-          
-        case 'activateTab':
-          if (!command.paneId || !command.tabId) {
-            return '✗ Missing required parameters for activateTab';
-          }
-          result = activateTabInFlexLayout(
-            model,
-            command.paneId,
-            command.tabId
-          );
-          break;
-          
-        case 'closeTab':
-          if (!command.tabId) {
-            return '✗ Missing required parameter tabId for closeTab';
-          }
-          result = closeTabInFlexLayout(
-            model,
-            command.tabId
-          );
-          break;
-          
-        case 'split':
-          if (!command.paneId || !command.orientation) {
-            return '✗ Missing required parameters for split';
-          }
-          result = splitPaneInFlexLayout(
-            model,
-            command.paneId,
-            command.orientation as 'row' | 'column',
-            command.ratio ?? 0.5
-          );
-          break;
-          
-        default:
-          return `Unknown command: ${command.action}`;
-      }
-      
-      if (result.success) {
-        return `✓ ${result.message}`;
-      } else {
-        return `✗ ${result.error}: ${result.message}`;
-      }
-    } catch (error) {
-      return `✗ Execution error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-    }
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    });
   };
 
   const formatTimestamp = (date: Date) => {
@@ -276,10 +275,10 @@ const AILayoutChat: React.FC = () => {
   };
 
   const exampleCommands = [
-    "Add a homework tab to the quiz pane",
-    "Split the lecture pane horizontally", 
+    "Add a homework tab to quiz-pane",
+    "Split lecture-pane horizontally", 
     "Show current layout",
-    "Close the diagram tab"
+    "Close diagram-tab"
   ];
 
   return (
@@ -287,11 +286,29 @@ const AILayoutChat: React.FC = () => {
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-gray-200 bg-gray-50 rounded-t-lg">
         <h3 className="text-lg font-semibold text-gray-800">AI Layout Assistant</h3>
-        <p className="text-sm text-gray-600">Control the layout with natural language</p>
+        <p className="text-sm text-gray-600">Control the layout with semantic names</p>
       </div>
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 min-h-0">
+        {messages.length === 0 && (
+          <div className="flex justify-start">
+            <div className="bg-gray-100 text-gray-800 rounded-lg px-4 py-2 max-w-[80%]">
+              <div className="whitespace-pre-wrap">
+                Hi! I can help you control the layout using semantic names. Try commands like:
+
+                • &quot;Add a homework tab to quiz-pane&quot;
+                • &quot;Split lecture-pane vertically&quot;
+                • &quot;Close diagram-tab&quot;
+                • &quot;Show me the current layout&quot;
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                {formatTimestamp(new Date())}
+              </div>
+            </div>
+          </div>
+        )}
+        
         {messages.map((message) => (
           <div
             key={message.id}
@@ -306,13 +323,13 @@ const AILayoutChat: React.FC = () => {
             >
               <div className="whitespace-pre-wrap">{message.content}</div>
               
-              {/* Show tool results if available */}
-              {message.toolResults && message.toolResults.length > 0 && (
+              {/* Show tool calls if available */}
+              {message.toolInvocations && message.toolInvocations.length > 0 && (
                 <div className="mt-2 text-xs opacity-75">
                   <div className="font-medium">Actions performed:</div>
-                  {message.toolResults.map((result, index) => (
+                  {message.toolInvocations.map((invocation, index) => (
                     <div key={index} className="mt-1">
-                      • {result.result?.action || 'Layout action'}: {result.result?.success ? '✓' : '✗'}
+                      • {invocation.toolName}: {invocation.args?.action || 'Layout action'}
                     </div>
                   ))}
                 </div>
@@ -321,7 +338,7 @@ const AILayoutChat: React.FC = () => {
               <div className={`text-xs mt-1 ${
                 message.role === 'user' ? 'text-blue-200' : 'text-gray-500'
               }`}>
-                {formatTimestamp(message.timestamp)}
+                {formatTimestamp(message.createdAt || new Date())}
               </div>
             </div>
           </div>
@@ -348,7 +365,7 @@ const AILayoutChat: React.FC = () => {
           {exampleCommands.map((command, index) => (
             <button
               key={index}
-              onClick={() => setInput(command)}
+              onClick={() => handleInputChange({ target: { value: command } } as any)}
               className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
             >
               {command}
@@ -359,24 +376,29 @@ const AILayoutChat: React.FC = () => {
 
       {/* Input */}
       <div className="flex-shrink-0 p-4 border-t border-gray-200">
-        <div className="flex space-x-2">
+        <form onSubmit={handleFormSubmit} className="flex space-x-2">
           <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="Type a layout command... (e.g., 'Add a new quiz tab')"
+            onChange={handleInputChange}
+            placeholder="Type a layout command... (e.g., 'Add a homework tab to quiz-pane')"
             className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             rows={2}
             disabled={isLoading}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleFormSubmit(e);
+              }
+            }}
           />
           <button
-            onClick={sendMessage}
+            type="submit"
             disabled={!input.trim() || isLoading}
             className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Send
           </button>
-        </div>
+        </form>
       </div>
     </div>
   );
