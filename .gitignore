@@ -40,3 +40,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python venv
+.venv
+
+#manim docs + rag data
+manim_docs_old/*.html
+manim_docs_old/*.tex
+manim_docs
+manim_docs_old
+manim_vectorstore_free
+media/
+*.jsonl
+*.pyc
+.vscode/
