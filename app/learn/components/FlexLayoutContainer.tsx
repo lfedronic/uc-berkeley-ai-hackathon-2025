@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react';
 import 'flexlayout-react/style/light.css';
 import ResizeObserverComponent from './ResizeObserver';
@@ -117,13 +117,21 @@ const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
   );
 };
 
+// Global model reference for tools to access
+let globalModel: Model | null = null;
+
 const FlexLayoutContainer: React.FC = () => {
   const [model, setModel] = React.useState<Model | null>(null);
+  const modelRef = useRef<Model | null>(null);
 
   useEffect(() => {
-    // Initialize the FlexLayout model from Zustand store
+    // Initialize the FlexLayout model - this is now our single source of truth
     const newModel = Model.fromJson(initialModel);
     setModel(newModel);
+    modelRef.current = newModel;
+    globalModel = newModel; // Make available to tools
+    
+    console.log('✅ FlexLayout initialized as single source of truth');
   }, []);
 
   const factory = (node: TabNode) => {
@@ -148,12 +156,20 @@ const FlexLayoutContainer: React.FC = () => {
   };
 
   const onModelChange = (newModel: Model) => {
-    // Handle user-initiated layout changes and sync with Zustand store
-    console.log('Layout changed:', newModel.toJson());
-    setModel(newModel);
+    // Handle user-initiated layout changes - FlexLayout is the source of truth
+    console.log('👆 User interaction - FlexLayout changed (native handling)');
     
-    // TODO: Convert FlexLayout model to our LayoutNode format and update store
-    // This will be implemented in Phase 5 (M-4)
+    setModel(newModel);
+    modelRef.current = newModel;
+    globalModel = newModel; // Update global reference for tools
+    
+    // Optional: Save to localStorage for persistence
+    try {
+      localStorage.setItem('flexlayout-model', JSON.stringify(newModel.toJson()));
+      console.log('💾 Saved layout to localStorage');
+    } catch (error) {
+      console.warn('Failed to save layout:', error);
+    }
   };
 
   if (!model) {
@@ -182,5 +198,10 @@ const FlexLayoutContainer: React.FC = () => {
     </ResizeObserverComponent>
   );
 };
+
+// Export function to get current model for tools
+export function getCurrentFlexLayoutModel(): Model | null {
+  return globalModel;
+}
 
 export default FlexLayoutContainer;

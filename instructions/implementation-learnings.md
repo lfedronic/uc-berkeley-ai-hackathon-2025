@@ -143,33 +143,51 @@ To remove the hardcoded constraints and return to flexible layout:
 - ✅ Created direct tool testing interface
 - ✅ Added proper parameter inputs and validation
 
-### 2. 🔍 CRITICAL ISSUE IDENTIFIED: State Sync Gap
-**Problem**: Tools work but UI doesn't reflect changes
+### 2. ✅ CRITICAL ISSUE ADDRESSED: State Sync Implementation
+**Status**: Bidirectional sync implemented with debugging
 - ✅ Tools update Zustand store correctly
-- ❌ FlexLayout UI doesn't sync with Zustand changes
-- ❌ ID mismatch: FlexLayout uses `#uuid` vs Zustand uses `tabset-1`
+- ✅ FlexLayout UI syncs with Zustand changes
+- ✅ Conversion functions created
+- ⚠️ **NEW ISSUE**: Tab switching broken after user interactions
 
-**Root Cause**: Missing bidirectional conversion between:
-- FlexLayout JSON format ↔ Our LayoutNode format
-- FlexLayout IDs ↔ Our semantic IDs
+**Root Cause of New Issue**: Sync loop interference
+- User drags tabs → onModelChange → Updates Zustand → useEffect → Recreates FlexLayout model → Breaks tab state
 
-### 3. Implement State Conversion (HIGH - NEXT CRITICAL STEP)
-**Required Functions**:
+### 3. ✅ State Conversion Implementation (COMPLETED)
+**Implemented Functions**:
 ```typescript
-// Convert our LayoutNode to FlexLayout JSON
+// ✅ Convert our LayoutNode to FlexLayout JSON
 function layoutNodeToFlexLayout(layout: LayoutNode): IJsonModel
 
-// Convert FlexLayout JSON to our LayoutNode  
+// ✅ Convert FlexLayout JSON to our LayoutNode  
 function flexLayoutToLayoutNode(flexModel: IJsonModel): LayoutNode
 
-// Sync Zustand changes to FlexLayout
+// ✅ Sync Zustand changes to FlexLayout with loop prevention
 useEffect(() => {
-  const unsubscribe = useLayoutStore.subscribe((state) => {
-    const flexModel = layoutNodeToFlexLayout(state.layout);
+  if (layout && !isSyncing) {
+    const flexModel = layoutNodeToFlexLayout(layout);
     setModel(Model.fromJson(flexModel));
-  });
-}, []);
+  }
+}, [layout, isSyncing]);
 ```
+
+**Files Created**:
+- `lib/agents/layoutConversion.ts` - Conversion utilities
+- Updated `FlexLayoutContainer.tsx` - Bidirectional sync with debugging
+
+### 4. 🐛 CURRENT DEBUGGING: Tab Switching Issue
+**Problem**: After dragging tabs together, can't switch between them
+**Debugging Added**:
+- Comprehensive console logging in FlexLayoutContainer
+- Conversion function debugging
+- Sync flag tracking
+- Active tab index validation
+
+**Debug Logs to Watch**:
+- `🔄 Sync useEffect triggered` - When Zustand → FlexLayout sync happens
+- `👆 User interaction` - When user drags/clicks tabs
+- `🚫 Setting isSyncing = true` - Loop prevention
+- `🔄 Converting tabset` - Active tab index calculation
 
 ### 4. Test Tool Functionality (MEDIUM)
 **Current Status**: Tools are implemented and working

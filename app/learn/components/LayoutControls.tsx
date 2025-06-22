@@ -1,7 +1,16 @@
 'use client';
 
 import React, { useState } from 'react';
-import { layoutTool} from '@/lib/agents/layoutAgent';
+import { getCurrentFlexLayoutModel } from './FlexLayoutContainer';
+import { 
+  addTabToFlexLayout, 
+  activateTabInFlexLayout, 
+  closeTabInFlexLayout, 
+  splitPaneInFlexLayout,
+  getEnvironmentFromFlexLayout,
+  getAvailablePaneIds,
+  getAvailableTabIds
+} from '@/lib/agents/flexLayoutTools';
 
 const LayoutControls: React.FC = () => {
   const [selectedTool, setSelectedTool] = useState('');
@@ -9,14 +18,14 @@ const LayoutControls: React.FC = () => {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  
+  const [availablePanes, setAvailablePanes] = useState<string[]>([]);
+  const [availableTabs, setAvailableTabs] = useState<Array<{ id: string; name: string; paneId: string }>>([]);
 
   const tools = [
-    { value: 'split', label: 'Split Pane', params: ['targetId', 'orientation', 'ratio'] },
-    { value: 'resize', label: 'Resize Pane', params: ['paneId', 'ratio'] },
     { value: 'addTab', label: 'Add Tab', params: ['paneId', 'title', 'contentId', 'makeActive'] },
     { value: 'activateTab', label: 'Activate Tab', params: ['paneId', 'tabId'] },
-    { value: 'closeTab', label: 'Close Tab', params: ['paneId', 'tabId'] },
+    { value: 'closeTab', label: 'Close Tab', params: ['tabId'] },
+    { value: 'split', label: 'Split Pane', params: ['targetId', 'orientation', 'ratio'] },
     { value: 'getEnv', label: 'Get Environment', params: [] },
   ];
 
@@ -25,6 +34,21 @@ const LayoutControls: React.FC = () => {
     setParams({});
     setResult(null);
     setError(null);
+    
+    // Update available IDs when tool changes
+    updateAvailableIds();
+  };
+
+  const updateAvailableIds = () => {
+    const model = getCurrentFlexLayoutModel();
+    if (model) {
+      const panes = getAvailablePaneIds(model);
+      const tabs = getAvailableTabIds(model);
+      setAvailablePanes(panes);
+      setAvailableTabs(tabs);
+      console.log('📋 Available panes:', panes);
+      console.log('📋 Available tabs:', tabs);
+    }
   };
 
   const handleParamChange = (paramName: string, value: string | number | boolean) => {
@@ -37,27 +61,70 @@ const LayoutControls: React.FC = () => {
   const executeTool = async () => {
     if (!selectedTool) return;
 
+    const model = getCurrentFlexLayoutModel();
+    if (!model) {
+      setError('FlexLayout model not available');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setResult(null);
 
     try {
-      const toolParams = {
-        verb: selectedTool as 'split' | 'resize' | 'remove' | 'assign' | 'addTab' | 'activateTab' | 'closeTab' | 'moveTab' | 'setLayout' | 'getEnv',
-        ...params
-      };
-
-      console.log('Executing tool with params:', toolParams);
-      // Call the tool function directly since it's a Vercel AI SDK tool
-      const result = await layoutTool.execute(toolParams, {
-        toolCallId: 'test-call',
-        messages: []
-      });
+      console.log('🔧 Executing FlexLayout tool:', selectedTool, params);
       
-      if (result && typeof result === 'object' && 'error' in result) {
-        setError(`${result.error}: ${result.message}`);
+      let toolResult;
+      
+      switch (selectedTool) {
+        case 'addTab':
+          toolResult = addTabToFlexLayout(
+            model,
+            params.paneId as string,
+            params.title as string,
+            params.contentId as string,
+            params.makeActive as boolean
+          );
+          break;
+          
+        case 'activateTab':
+          toolResult = activateTabInFlexLayout(
+            model,
+            params.paneId as string,
+            params.tabId as string
+          );
+          break;
+          
+        case 'closeTab':
+          toolResult = closeTabInFlexLayout(
+            model,
+            params.tabId as string
+          );
+          break;
+          
+        case 'split':
+          toolResult = splitPaneInFlexLayout(
+            model,
+            params.targetId as string,
+            params.orientation as 'row' | 'column',
+            params.ratio as number
+          );
+          break;
+          
+        case 'getEnv':
+          toolResult = getEnvironmentFromFlexLayout(model);
+          break;
+          
+        default:
+          toolResult = { success: false, error: 'UNKNOWN_TOOL', message: `Tool ${selectedTool} not implemented` };
+      }
+      
+      if (toolResult.success) {
+        setResult(toolResult.message || 'Operation completed successfully');
+        // Update available IDs after successful operation
+        setTimeout(updateAvailableIds, 100);
       } else {
-        setResult(JSON.stringify(result, null, 2));
+        setError(`${toolResult.error}: ${toolResult.message}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error');
@@ -71,6 +138,57 @@ const LayoutControls: React.FC = () => {
   const renderParamInput = (paramName: string) => {
     const value = params[paramName];
     
+    if (paramName === 'paneId') {
+      return (
+        <select
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => handleParamChange(paramName, e.target.value)}
+          className="px-2 py-1 border border-gray-300 rounded text-sm flex-1"
+        >
+          <option value="">Select pane...</option>
+          {availablePanes.map(paneId => (
+            <option key={paneId} value={paneId}>
+              {paneId}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    
+    if (paramName === 'tabId') {
+      return (
+        <select
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => handleParamChange(paramName, e.target.value)}
+          className="px-2 py-1 border border-gray-300 rounded text-sm flex-1"
+        >
+          <option value="">Select tab...</option>
+          {availableTabs.map(tab => (
+            <option key={tab.id} value={tab.id}>
+              {tab.name} (in {tab.paneId})
+            </option>
+          ))}
+        </select>
+      );
+    }
+    
+    if (paramName === 'targetId') {
+      return (
+        <select
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => handleParamChange(paramName, e.target.value)}
+          className="px-2 py-1 border border-gray-300 rounded text-sm flex-1"
+        >
+          <option value="">Select target...</option>
+          {availablePanes.map(paneId => (
+            <option key={paneId} value={paneId}>
+              {paneId}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    
     if (paramName === 'orientation') {
       return (
         <select
@@ -81,6 +199,23 @@ const LayoutControls: React.FC = () => {
           <option value="">Select orientation</option>
           <option value="row">Row</option>
           <option value="column">Column</option>
+        </select>
+      );
+    }
+    
+    if (paramName === 'contentId') {
+      return (
+        <select
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => handleParamChange(paramName, e.target.value)}
+          className="px-2 py-1 border border-gray-300 rounded text-sm flex-1"
+        >
+          <option value="">Select content type...</option>
+          <option value="lecture">Lecture</option>
+          <option value="quiz">Quiz</option>
+          <option value="diagram">Diagram</option>
+          <option value="summary">Summary</option>
+          <option value="placeholder">Placeholder</option>
         </select>
       );
     }
@@ -126,10 +261,10 @@ const LayoutControls: React.FC = () => {
     <div className="bg-white border-t border-gray-200 p-4">
       <div className="max-w-4xl mx-auto">
         <h3 className="text-lg font-semibold mb-3 text-gray-800">
-          Layout Tool Testing (Direct)
+          FlexLayout Tool Testing (Direct)
         </h3>
         
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div>
             <label className="block text-sm font-medium mb-2">Select Tool:</label>
             <select
@@ -144,6 +279,15 @@ const LayoutControls: React.FC = () => {
                 </option>
               ))}
             </select>
+          </div>
+          
+          <div>
+            <button
+              onClick={updateAvailableIds}
+              className="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 mt-6"
+            >
+              Refresh IDs
+            </button>
           </div>
           
           <div>
@@ -182,35 +326,31 @@ const LayoutControls: React.FC = () => {
         {result && (
           <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-md">
             <p className="text-green-800 text-sm font-medium mb-2">Result:</p>
-            <pre className="text-xs bg-white p-2 rounded border overflow-auto max-h-40">
-              {result}
-            </pre>
+            <p className="text-sm">{result}</p>
           </div>
         )}
 
         <div className="mb-4 p-3 bg-gray-50 border border-gray-200 rounded-md">
-          <h4 className="text-sm font-medium mb-2">Zustand Store State (Correct IDs):</h4>
+          <h4 className="text-sm font-medium mb-2">FlexLayout State (Live IDs):</h4>
           <div className="text-xs">
             <p><strong>Available Pane IDs:</strong></p>
             <ul className="list-disc list-inside ml-2">
-              <li>tabset-1 (Lecture Notes)</li>
-              <li>tabset-2 (Quiz)</li>
-              <li>tabset-3 (Diagram)</li>
-              <li>tabset-4 (Summary)</li>
+              {availablePanes.map(paneId => (
+                <li key={paneId}>{paneId}</li>
+              ))}
             </ul>
             <p className="mt-2"><strong>Available Tab IDs:</strong></p>
             <ul className="list-disc list-inside ml-2">
-              <li>tab-lecture (in tabset-1)</li>
-              <li>tab-quiz (in tabset-2)</li>
-              <li>tab-diagram (in tabset-3)</li>
-              <li>tab-summary (in tabset-4)</li>
+              {availableTabs.map(tab => (
+                <li key={tab.id}>{tab.name} ({tab.id}) in {tab.paneId}</li>
+              ))}
             </ul>
           </div>
         </div>
 
         <div className="text-xs text-gray-500">
-          <p><strong>Note:</strong> Tools update Zustand store but FlexLayout UI doesnt sync yet</p>
-          <p><strong>Issue:</strong> The FlexLayout IDs (with #) are different from our Zustand IDs</p>
+          <p><strong>Architecture:</strong> FlexLayout-only (no Zustand) - Single source of truth</p>
+          <p><strong>Note:</strong> Tab switching should now work properly after dragging tabs together</p>
         </div>
       </div>
     </div>
