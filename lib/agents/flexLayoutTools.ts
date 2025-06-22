@@ -1,25 +1,37 @@
 /* ────────────────────────────────────────────────
    lib/agents/flexLayoutTools.ts
+   – robust splitPane (row/column IDs accepted)
 ───────────────────────────────────────────────── */
-import { Model, Actions, DockLocation } from 'flexlayout-react';
+import { Model, Actions, DockLocation, TabSetNode, RowNode, RowOrColumn, Node } from 'flexlayout-react';
 
 export interface FlexLayoutToolResult {
   success: boolean;
   error?:   string;
   message?: string;
-  /* no more raw Model reference — it isn’t clone-able */
 }
 
-/* helper */
-function getBgColorForContent(type: string) {
-  return {
-    lecture: 'bg-blue-100',
-    quiz:    'bg-green-100',
-    diagram: 'bg-purple-100',
-    summary: 'bg-yellow-100',
-  }[type] ?? 'bg-gray-100';
+/* ---------- utility: walk the JSON tree ---------- */
+function walk<T>(model: Model, fn: (node: any, parent: any) => T | undefined): T | undefined {
+  const dfs = (n: any, parent: any): T | undefined => {
+    const out = fn(n, parent);
+    if (out !== undefined) return out;
+    n.children?.forEach((c: any) => {
+      const o = dfs(c, n);
+      if (o !== undefined) return o;
+    });
+    return undefined;
+  };
+  return dfs(model.toJson().layout, null);
 }
 
+/* ---------- bg-colours for demo panes ---------- */
+const bg = (t: string) =>
+  ({ lecture: 'bg-blue-100', quiz: 'bg-green-100', diagram: 'bg-purple-100', summary: 'bg-yellow-100' }[
+    t
+  ] ?? 'bg-gray-100');
+
+/* ------------------------------------------------------------------ */
+/*  ADD TAB                                                            */
 /* ------------------------------------------------------------------ */
 export function addTabToFlexLayout(
   model: Model,
@@ -29,7 +41,7 @@ export function addTabToFlexLayout(
   makeActive = false,
 ): FlexLayoutToolResult {
   try {
-    const pane = model.getNodeById(paneId);
+    const pane = model.getNodeById(paneId) as TabSetNode | null;
     if (!pane || pane.getType() !== 'tabset') {
       return { success: false, error: 'PANE_NOT_FOUND', message: `Pane ${paneId} not found` };
     }
@@ -39,10 +51,10 @@ export function addTabToFlexLayout(
       Actions.addNode(
         {
           type: 'tab',
-          id: newTabId,
+          id:   newTabId,
           name: title,
           component: 'content',
-          config: { contentType: contentId, bgColor: getBgColorForContent(contentId) },
+          config: { contentType: contentId, bgColor: bg(contentId) },
         },
         paneId,
         DockLocation.CENTER,
@@ -57,11 +69,10 @@ export function addTabToFlexLayout(
   }
 }
 
-export function activateTabInFlexLayout(
-  model: Model,
-  _paneId: string,
-  tabId: string,
-): FlexLayoutToolResult {
+/* ------------------------------------------------------------------ */
+/*  ACTIVATE TAB                                                       */
+/* ------------------------------------------------------------------ */
+export function activateTabInFlexLayout(model: Model, _pid: string, tabId: string): FlexLayoutToolResult {
   try {
     model.doAction(Actions.selectTab(tabId));
     return { success: true, message: `Activated tab ${tabId}` };
@@ -70,6 +81,9 @@ export function activateTabInFlexLayout(
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  CLOSE TAB                                                          */
+/* ------------------------------------------------------------------ */
 export function closeTabInFlexLayout(model: Model, tabId: string): FlexLayoutToolResult {
   try {
     model.doAction(Actions.deleteTab(tabId));
@@ -79,14 +93,65 @@ export function closeTabInFlexLayout(model: Model, tabId: string): FlexLayoutToo
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  SPLIT PANE (now tolerant)                                          */
+/* ------------------------------------------------------------------ */
 export function splitPaneInFlexLayout(
   model: Model,
-  targetId: string,
+  target: string,
   orientation: 'row' | 'column',
-  ratio = 0.5,
+  ratio = 0.67,
 ): FlexLayoutToolResult {
   try {
-    const dock        = orientation === 'row' ? DockLocation.RIGHT : DockLocation.BOTTOM;
+    /* 1. Resolve target node (ANY type now) */
+    let tgtNode = model.getNodeById(target) as Node | null;
+
+    /* Fallback: find tabset containing a tab with the given title */
+    if (!tgtNode) {
+      const parentId = walk<string | undefined>(model, (n, parent) => {
+        if (n.type === 'tab' && n.name?.toLowerCase() === target.toLowerCase()) return parent?.id;
+      });
+      if (parentId) tgtNode = model.getNodeById(parentId) as Node | null;
+    }
+
+    if (!tgtNode) {
+      return { success: false, error: 'TARGET_NOT_FOUND', message: `Can’t find pane “${target}”` };
+    }
+
+    const dock = orientation === 'row' ? DockLocation.RIGHT : DockLocation.BOTTOM;
+
+    /* 2. Ensure we are docking under a TABSET */
+    let containerId = tgtNode.getType() === 'tabset' ? tgtNode.getId() : undefined;
+
+    if (!containerId) {
+      /* create an empty tabset inside the row/column first */
+      const newIntermediateId = `tabset-${Date.now()}`;
+      model.doAction(
+        Actions.addNode(
+          {
+            type: 'tabset',
+            id:   newIntermediateId,
+            weight: 50,
+            children: [
+              {
+                type: 'tab',
+                id:   `tab-${Date.now()}`,
+                name: 'Temp',
+                component: 'content',
+                config: { contentType: 'placeholder', bgColor: 'bg-gray-100' },
+              },
+            ],
+          },
+          tgtNode.getId(),
+          DockLocation.CENTER,
+          -1,
+          false,
+        ),
+      );
+      containerId = newIntermediateId;
+    }
+
+    /* 3. Dock the new split next to containerId */
     const newTabsetId = `tabset-${Date.now()}`;
     const newTabId    = `tab-${Date.now()}`;
 
@@ -95,28 +160,33 @@ export function splitPaneInFlexLayout(
         {
           type: 'tabset',
           id:   newTabsetId,
-          children: [{
-            type: 'tab',
-            id:   newTabId,
-            name: 'New Tab',
-            component: 'content',
-            config: { contentType: 'placeholder', bgColor: 'bg-gray-100' },
-          }],
           weight: ratio * 100,
+          children: [
+            {
+              type: 'tab',
+              id:   newTabId,
+              name: 'New Tab',
+              component: 'content',
+              config: { contentType: 'placeholder', bgColor: 'bg-gray-100' },
+            },
+          ],
         },
-        targetId,
+        containerId,
         dock,
         0,
         false,
       ),
     );
 
-    return { success: true, message: `Split pane ${targetId} (${orientation})` };
+    return { success: true, message: `Split pane ${containerId} (${orientation})` };
   } catch (e) {
     return { success: false, error: 'EXECUTION_ERROR', message: (e as Error).message };
   }
 }
 
+/* ------------------------------------------------------------------ */
+/*  ENV SNAPSHOT                                                       */
+/* ------------------------------------------------------------------ */
 export function getEnvironmentFromFlexLayout(model: Model): FlexLayoutToolResult {
   try {
     return { success: true, message: JSON.stringify(model.toJson()) };
@@ -125,25 +195,21 @@ export function getEnvironmentFromFlexLayout(model: Model): FlexLayoutToolResult
   }
 }
 
-/* helpers for LayoutControls UI */
+/* ------------------------------------------------------------------ */
+/*  Helper utilities for UI                                            */
+/* ------------------------------------------------------------------ */
 export function getAvailablePaneIds(model: Model): string[] {
   const ids: string[] = [];
-  const walk = (n: any) => {
-    if (n.type === 'tabset') ids.push(n.id);
-    n.children?.forEach(walk);
-  };
-  walk(model.toJson().layout);
+  walk(model, (n) => { if (n.type === 'tabset') ids.push(n.id); });
   return ids;
 }
 
 export function getAvailableTabIds(model: Model) {
   const out: Array<{ id: string; name: string; paneId: string }> = [];
-  const walk = (n: any) => {
-    if (n.type === 'tabset') {
-      n.children?.forEach((t: any) => out.push({ id: t.id, name: t.name, paneId: n.id }));
+  walk(model, (n, parent) => {
+    if (n.type === 'tab' && parent?.type === 'tabset') {
+      out.push({ id: n.id, name: n.name, paneId: parent.id });
     }
-    n.children?.forEach(walk);
-  };
-  walk(model.toJson().layout);
+  });
   return out;
 }

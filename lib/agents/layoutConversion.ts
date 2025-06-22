@@ -35,18 +35,6 @@ export function layoutNodeToFlexLayout(layout: LayoutNode): IJsonModel {
     } else {
       // row or column
       return {
-        type: node.type,
-        id: node.id,
-        weight: node.weight || 50,
-        children: node.children?.map(child => convertNode(child)) || []
-      };
-    }
-  };
-
-  return {
-    global: {
-      tabEnableClose: true,
-      tabEnableRename: false,
       borderSize: 25,
     },
     borders: [],
