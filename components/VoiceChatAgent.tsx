@@ -413,7 +413,7 @@ export default function VoiceChatAgent({
       {!isConnected && isMinimized && (
         <button
           onClick={startCall}
-          className="fixed bottom-6 right-6 bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-full shadow-lg transition-all duration-300 z-50 animate-pulse"
+          className="fixed bottom-6 right-6 bg-[#3182ce] hover:bg-[#3182ce] text-white p-4 rounded-full shadow-lg transition-all duration-300 z-50 animate-pulse"
           title="Start Voice Conversation"
         >
           <Mic size={24} />
@@ -447,7 +447,7 @@ export default function VoiceChatAgent({
             // Expanded state
             <div className="flex flex-col h-full">
               {/* Header */}
-              <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-purple-600 text-white rounded-t-2xl">
+              <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-[#3182ce] text-white rounded-t-2xl">
                 <div className="flex items-center space-x-3">
                   <div
                     className={`w-3 h-3 rounded-full ${
@@ -506,7 +506,7 @@ export default function VoiceChatAgent({
                         <div
                           className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                             msg.role === 'user'
-                              ? 'bg-purple-600 text-white'
+                              ? 'bg-[#3182ce] text-white'
                               : msg.toolCall
                               ? 'bg-green-100 text-green-800 border border-green-200'
                               : 'bg-gray-100 text-gray-900'
@@ -516,7 +516,7 @@ export default function VoiceChatAgent({
                           <div
                             className={`text-xs mt-1 ${
                               msg.role === 'user'
-                                ? 'text-purple-200'
+                                ? 'text-[#3182ce]'
                                 : msg.toolCall
                                 ? 'text-green-600'
                                 : 'text-gray-500'
