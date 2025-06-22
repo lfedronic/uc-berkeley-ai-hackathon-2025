@@ -14,7 +14,7 @@ import Quiz       from '@/components/Quiz';
 import ChatPopup  from '@/components/ChatPopup';
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 
-/* ---------- starter layout: 2×2 placeholders ---------- */
+/* ---------- simplified starter layout: single welcome tab ---------- */
 const initialModel: IJsonModel = {
   global: { tabEnableClose: true, tabEnableRename: false, borderSize: 25 },
   layout: {
@@ -22,67 +22,50 @@ const initialModel: IJsonModel = {
     weight: 100,
     children: [
       {
-        type: 'column',
-        weight: 50,
+        type: 'tabset',
+        id: 'main-tabset',
+        weight: 100,
         children: [
           {
-            type: 'tabset',
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                id:   'lecture-welcome',
-                name: 'Lecture Notes',
-                component: 'content',
-                config: { contentType: 'lecture', bgColor: 'bg-blue-100' },
-              },
-            ],
-          },
-          {
-            type: 'tabset',
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                id:   'quiz-welcome',
-                name: 'Quiz',
-                component: 'content',
-                config: { contentType: 'quiz', bgColor: 'bg-green-100' },
-              },
-            ],
-          },
-        ],
-      },
-      {
-        type: 'column',
-        weight: 50,
-        children: [
-          {
-            type: 'tabset',
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                id:   'diagram-welcome',
-                name: 'Diagram',
-                component: 'content',
-                config: { contentType: 'diagram', bgColor: 'bg-purple-100' },
-              },
-            ],
-          },
-          {
-            type: 'tabset',
-            id:   'main-tabset',          // ← will collect chat-generated tabs
-            weight: 50,
-            children: [
-              {
-                type: 'tab',
-                id:   'summary-welcome',
-                name: 'Summary',
-                component: 'content',
-                config: { contentType: 'summary', bgColor: 'bg-yellow-100' },
-              },
-            ],
+            type: 'tab',
+            id: 'welcome-tab',
+            name: 'Welcome',
+            component: 'content',
+            config: { 
+              contentType: 'welcome',
+              bgColor: 'bg-gradient-to-br from-blue-50 to-indigo-100',
+              data: {
+                title: 'Welcome to AI Learning Platform',
+                content: `# 🎓 Welcome to Your AI Learning Environment!
+g
+📚 Create Content
+• “Lesson plan on photosynthesis”
+• “Quiz on JavaScript”
+• “Diagram of the water cycle”
+• “Pendulum simulation”
+
+🎨 Manage Layout
+• “Split screen vertically”
+• “Move quiz to right pane”
+• “New tab for notes”
+• “Optimize for studying”
+
+🚀 Combine Tasks
+• “Quiz on photosynthesis next to notes”
+• “Neural network diagram in new tab”
+• “Algebra lesson + study layout”
+
+🤖 Smart & Adaptive
+The AI automatically structures content, arranges layouts, and provides visual feedback.
+
+Click the chat to begin..`,
+                customStyles: {
+                  container: 'p-8 max-w-4xl mx-auto',
+                  title: 'text-3xl font-bold text-gray-800 mb-6 text-center',
+                  content: 'prose prose-lg max-w-none text-gray-700'
+                }
+              }
+            },
           },
         ],
       },
@@ -90,10 +73,11 @@ const initialModel: IJsonModel = {
   },
 };
 
-/* ---------- content renderer ---------- */
+/* ---------- abstract content renderer ---------- */
 const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
-  const { contentType, bgColor, data } = node.getConfig();
+  const { contentType, bgColor, data, customHTML } = node.getConfig();
 
+  // Handle specific component types that need special rendering
   switch (contentType) {
     case 'summary':
       if (data?.content) {
@@ -120,30 +104,80 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
         );
       }
       break;
+
+    case 'welcome':
+      if (data?.content && data?.title) {
+        const styles = data.customStyles || {};
+        return (
+          <div className={`h-full w-full overflow-auto ${bgColor ?? 'bg-gray-100'}`}>
+            <div className={styles.container || 'p-8 max-w-4xl mx-auto'}>
+              <h1 className={styles.title || 'text-3xl font-bold text-gray-800 mb-6 text-center'}>
+                {data.title}
+              </h1>
+              <div 
+                className={styles.content || 'prose prose-lg max-w-none text-gray-700'}
+                dangerouslySetInnerHTML={{ 
+                  __html: data.content.replace(/\n/g, '<br/>').replace(/### /g, '<h3>').replace(/## /g, '<h2>').replace(/# /g, '<h1>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/- /g, '• ') 
+                }}
+              />
+            </div>
+          </div>
+        );
+      }
+      break;
   }
 
-  /* placeholder fallback */
-  const text: Record<string, string> = {
-    lecture:
-      'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.',
-    quiz:
-      'Quiz Content\n\nUse the chat to generate a quiz and it will appear here.',
-    diagram:
-      'Diagram Content\n\nThis pane would contain visual diagrams, charts, and illustrations.',
-    summary:
-      'Summary Content\n\nUse the chat to generate a summary and it will appear here.',
-    welcome:
-      'Welcome to the AI Learning Platform!\n\nUse the chat popup to generate:\n• Concept summaries and lesson plans\n• Interactive quizzes\n\nEach item appears as a draggable tab.',
-  };
-
-  return (
-    <div className={`h-full w-full flex flex-col p-4 ${bgColor ?? 'bg-gray-100'}`}>
-      <h2 className="mb-4 text-lg font-semibold text-gray-800">{node.getName()}</h2>
-      <div className="flex-1 whitespace-pre-line text-gray-700">
-        {text[contentType] ?? 'Placeholder'}
+  // Handle custom HTML content (for chat agent to inject any HTML)
+  if (customHTML) {
+    return (
+      <div className={`h-full w-full overflow-auto ${bgColor ?? 'bg-gray-100'}`}>
+        <div dangerouslySetInnerHTML={{ __html: customHTML }} />
       </div>
-      <div className="mt-4 text-xs text-gray-500">
-        Tab&nbsp;ID: {node.getId()} | Type: {contentType ?? 'default'}
+    );
+  }
+
+  // Handle custom component data (flexible structure for chat agent)
+  if (data?.content || data?.html) {
+    const styles = data.customStyles || {};
+    const containerClass = styles.container || 'p-6';
+    const titleClass = styles.title || 'text-xl font-semibold text-gray-800 mb-4';
+    const contentClass = styles.content || 'text-gray-700';
+
+    return (
+      <div className={`h-full w-full overflow-auto ${bgColor ?? 'bg-gray-100'}`}>
+        <div className={containerClass}>
+          {data.title && (
+            <h2 className={titleClass}>{data.title}</h2>
+          )}
+          {data.html ? (
+            <div 
+              className={contentClass}
+              dangerouslySetInnerHTML={{ __html: data.html }} 
+            />
+          ) : (
+            <div className={`${contentClass} whitespace-pre-wrap`}>
+              {data.content}
+            </div>
+          )}
+          {data.metadata && (
+            <div className="mt-4 text-xs text-gray-500 border-t pt-2">
+              {Object.entries(data.metadata).map(([key, value]) => (
+                <div key={key}>{key}: {String(value)}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback for empty or unknown content
+  return (
+    <div className={`h-full w-full flex flex-col items-center justify-center p-8 ${bgColor ?? 'bg-gray-100'}`}>
+      <div className="text-center text-gray-500">
+        <h2 className="text-lg font-medium mb-2">{node.getName()}</h2>
+        <p className="text-sm">This tab is ready for content.</p>
+        <p className="text-xs mt-2 opacity-75">Use the chat to generate content for this tab.</p>
       </div>
     </div>
   );
