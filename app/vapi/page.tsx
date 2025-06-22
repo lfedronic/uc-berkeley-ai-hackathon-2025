@@ -22,7 +22,7 @@ export default function VapiPage() {
 
 	// Use environment variables and hardcoded values
 	const apiKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY || "";
-	const assistantId = "c2a3d2e2-a744-4be6-b745-6f11708a798b";
+	const assistantId = "9c402506-cad6-4687-a4f5-ea751472ccf9";
 	const isConfigured = !!apiKey;
 
 	// Refs for auto-scroll

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ChatPopup from '@/components/ChatPopup';
+import VoiceChatAgent from '@/components/VoiceChatAgent';
 import Quiz from '@/components/Quiz';
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 
@@ -13,6 +14,7 @@ export default function TestChatPage() {
   const [lessonContent, setLessonContent] = useState<string>('');
   const [currentQuiz, setCurrentQuiz] = useState<GeneratedQuiz | null>(null);
   const [contentType, setContentType] = useState<ContentType>(null);
+  const [useVoiceChat, setUseVoiceChat] = useState(false);
 
   const handleLessonUpdate = (content: string) => {
     setLessonContent(content);
@@ -120,8 +122,32 @@ export default function TestChatPage() {
         </div>
       </div>
 
-      {/* Chat Popup */}
-      <ChatPopup onLessonUpdate={handleLessonUpdate} onQuizUpdate={handleQuizUpdate} />
+      {/* Chat Interface Toggle */}
+      <div className="fixed bottom-20 right-6 z-40">
+        <button
+          onClick={() => setUseVoiceChat(!useVoiceChat)}
+          className="bg-gray-800 text-white px-3 py-1 rounded-full text-xs hover:bg-gray-700 transition-colors"
+        >
+          {useVoiceChat ? '🎤 Voice' : '💬 Text'}
+        </button>
+      </div>
+
+      {/* Chat Interface */}
+      {useVoiceChat ? (
+        <VoiceChatAgent 
+          onLessonUpdate={handleLessonUpdate} 
+          onQuizUpdate={handleQuizUpdate}
+          onDiagramUpdate={() => {}} // Not implemented in test-chat page
+          onWebpageUpdate={() => {}} // Not implemented in test-chat page
+        />
+      ) : (
+        <ChatPopup 
+          onLessonUpdate={handleLessonUpdate} 
+          onQuizUpdate={handleQuizUpdate}
+          onDiagramUpdate={() => {}} // Not implemented in test-chat page
+          onWebpageUpdate={() => {}} // Not implemented in test-chat page
+        />
+      )}
 
       {/* Custom CSS for textbook-style markdown */}
       <style jsx global>{`
