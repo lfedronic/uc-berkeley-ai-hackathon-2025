@@ -5,13 +5,15 @@ import { useState } from 'react';
 import { X, MessageCircle } from 'lucide-react';
 
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
+import { GeneratedDiagram } from '@/lib/agents/diagramAgent';
 
 interface ChatPopupProps {
   onLessonUpdate?: (content: string) => void;
   onQuizUpdate?: (quiz: GeneratedQuiz) => void;
+  onDiagramUpdate?: (diagram: GeneratedDiagram) => void;
 }
 
-export default function ChatPopup({ onLessonUpdate, onQuizUpdate }: ChatPopupProps) {
+export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdate }: ChatPopupProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
@@ -37,6 +39,18 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate }: ChatPopupPro
         const tool = quizResults[0];
         if (tool.state === 'result' && tool.result?.success && tool.result?.quiz) {
           onQuizUpdate?.(tool.result.quiz);
+        }
+      }
+
+      // Check for diagram results
+      const diagramResults = message.toolInvocations?.filter(
+        (tool) => tool.state === 'result' && tool.toolName === 'generateDiagram'
+      );
+      
+      if (diagramResults && diagramResults.length > 0) {
+        const tool = diagramResults[0];
+        if (tool.state === 'result' && tool.result?.success && tool.result?.diagram) {
+          onDiagramUpdate?.(tool.result.diagram);
         }
       }
     },
@@ -74,12 +88,13 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate }: ChatPopupPro
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {messages.length === 0 && (
               <div className="text-center text-gray-500 mt-8">
-                <p className="text-sm">Ask me to create summaries, lesson plans, course overviews, or quizzes!</p>
+                <p className="text-sm">Ask me to create summaries, lesson plans, quizzes, or diagrams!</p>
                 <div className="mt-4 space-y-2 text-xs text-gray-400">
                   <p>• &quot;Can you give me a summary of photosynthesis?&quot;</p>
                   <p>• &quot;Create a lesson plan for basic algebra&quot;</p>
                   <p>• &quot;Generate a quiz on JavaScript fundamentals&quot;</p>
-                  <p>• &quot;Make a practice test for calculus&quot;</p>
+                  <p>• &quot;Show me a diagram of the water cycle&quot;</p>
+                  <p>• &quot;Create a flowchart for software development&quot;</p>
                 </div>
               </div>
             )}
@@ -133,6 +148,21 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate }: ChatPopupPro
                           {tool.state === 'call' && tool.toolName === 'generateQuiz' && (
                             <div className="text-orange-600">
                               🔄 Creating quiz on {tool.args?.topic}...
+                            </div>
+                          )}
+                          {tool.state === 'result' && tool.toolName === 'generateDiagram' && (
+                            <div className="text-green-600">
+                              ✓ Generated diagram for &quot;{tool.result?.concept}&quot;
+                              {tool.result?.success && (
+                                <div className="text-blue-600 mt-1">
+                                  Diagram created as new tab!
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'generateDiagram' && (
+                            <div className="text-orange-600">
+                              🔄 Creating diagram for {tool.args?.concept}...
                             </div>
                           )}
                         </div>

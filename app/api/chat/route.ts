@@ -3,6 +3,7 @@ import { streamText, tool } from 'ai';
 import { z } from 'zod';
 import { generateSummary } from '@/lib/agents/summaryAgent';
 import { generateQuiz } from '@/lib/agents/quizAgent';
+import { generateDiagram } from '@/lib/agents/diagramAgent';
 
 // Initialize the Google AI provider
 const google = createGoogleGenerativeAI({
@@ -70,6 +71,35 @@ const tools = {
       }
     },
   }),
+  generateDiagram: tool({
+    description: 'Generate visual Mermaid diagrams to help explain concepts, processes, relationships, and educational content',
+    parameters: z.object({
+      concept: z.string().describe('The concept, topic, or subject to create a diagram for'),
+      type: z.enum(['flowchart', 'mindmap', 'sequence', 'class', 'timeline', 'auto']).optional().describe('Type of diagram: flowchart (processes/workflows), mindmap (concept relationships), sequence (interactions), class (object relationships), timeline (chronological events), or auto (let AI choose)'),
+      complexity: z.enum(['simple', 'detailed', 'comprehensive']).optional().describe('Complexity level: simple (3-5 elements), detailed (6-12 elements), comprehensive (12+ elements)'),
+    }),
+    execute: async ({ concept, type, complexity }) => {
+      try {
+        const diagram = await generateDiagram({
+          concept,
+          type,
+          complexity,
+        });
+        return { 
+          success: true,
+          diagram: diagram,
+          concept: concept,
+          contentType: 'diagram'
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: 'Failed to generate diagram',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    },
+  }),
 };
 
 export async function POST(req: Request) {
@@ -95,7 +125,14 @@ export async function POST(req: Request) {
         * Assessment materials
         Examples: "Create a quiz on calculus", "Generate practice problems for chemistry", "Make a test for JavaScript basics"
         
-      Choose the appropriate tool based on what the user is requesting. Summary content will be displayed as formatted markdown, while quizzes will be displayed as interactive forms where users can answer questions and get scored.`,
+      - generateDiagram: Use this tool when users ask for:
+        * Visual explanations of concepts or processes
+        * Diagrams to understand relationships or workflows
+        * Mind maps, flowcharts, or other visual aids
+        * Help visualizing complex topics
+        Examples: "Show me a diagram of photosynthesis", "Create a flowchart for the software development process", "I need a mind map for project management concepts", "Visualize how neural networks work"
+        
+      Choose the appropriate tool based on what the user is requesting. Summary content will be displayed as formatted markdown, quizzes will be displayed as interactive forms where users can answer questions and get scored, and diagrams will be rendered as interactive Mermaid visualizations.`,
     });
 
     return result.toDataStreamResponse();

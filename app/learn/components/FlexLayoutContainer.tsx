@@ -41,8 +41,10 @@ const initialModel: IJsonModel = {
 
 import Summary from '@/components/Summary';
 import Quiz from '@/components/Quiz';
+import Diagram from '@/components/Diagram';
 import ChatPopup from '@/components/ChatPopup';
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
+import { GeneratedDiagram } from '@/lib/agents/diagramAgent';
 
 // Content component that renders different types based on config
 const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
@@ -76,6 +78,16 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
         );
       }
       break;
+      
+    case 'diagram':
+      if (data?.diagram) {
+        return (
+          <Diagram
+            diagram={data.diagram}
+          />
+        );
+      }
+      break;
   }
   
   // Fallback placeholder content
@@ -84,13 +96,13 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
   const getPlaceholderText = (type: string) => {
     switch (type) {
       case 'welcome':
-        return 'Welcome to the AI Learning Platform!\n\nUse the chat popup in the bottom-right corner to generate:\n\n• Concept summaries and lesson plans\n• Interactive quizzes and assessments\n• Course overviews and curricula\n\nEach piece of content will appear as a new draggable tab that you can arrange however you like.';
+        return 'Welcome to the AI Learning Platform!\n\nUse the chat popup in the bottom-right corner to generate:\n\n• Concept summaries and lesson plans\n• Interactive quizzes and assessments\n• Visual diagrams and flowcharts\n• Course overviews and curricula\n\nEach piece of content will appear as a new draggable tab that you can arrange however you like.';
       case 'lecture':
         return 'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.';
       case 'quiz':
         return 'Quiz Content\n\nUse the chat to generate a quiz and it will appear here.';
       case 'diagram':
-        return 'Diagram Content\n\nThis pane would contain visual diagrams, charts, and illustrations.';
+        return 'Diagram Content\n\nUse the chat to generate a visual diagram and it will appear here.';
       case 'summary':
         return 'Summary Content\n\nUse the chat to generate a summary and it will appear here.';
       default:
@@ -228,6 +240,50 @@ const FlexLayoutContainer: React.FC = () => {
     }
   };
 
+  // Handler for when diagram content is generated
+  const handleDiagramUpdate = (diagram: GeneratedDiagram) => {
+    console.log('🔥 handleDiagramUpdate called with diagram:', diagram.title);
+    console.log('🔥 Model available:', !!model);
+    
+    if (!model) {
+      console.error('❌ No model available for adding diagram tab');
+      return;
+    }
+    
+    console.log('📊 Creating diagram tab:', diagram.title);
+    
+    // Create a unique tab ID
+    const tabId = `tab-${Date.now()}`;
+    
+    try {
+      // Add a new tab with the diagram content using FlexLayout Actions
+      const action = Actions.addNode(
+        {
+          type: 'tab',
+          id: tabId,
+          name: diagram.title,
+          component: 'content',
+          config: {
+            contentType: 'diagram',
+            data: {
+              diagram
+            }
+          }
+        },
+        'main-tabset',
+        DockLocation.CENTER,
+        -1, // Add to the end (rightmost position)
+        true // make active
+      );
+      
+      console.log('📊 Created action:', action);
+      model.doAction(action);
+      console.log(`✅ Added diagram tab: ${diagram.title}`);
+    } catch (error) {
+      console.error('❌ Error adding diagram tab:', error);
+    }
+  };
+
   const factory = (node: TabNode) => {
     const component = node.getComponent();
     
@@ -293,6 +349,7 @@ const FlexLayoutContainer: React.FC = () => {
         <ChatPopup 
           onLessonUpdate={handleLessonUpdate}
           onQuizUpdate={handleQuizUpdate}
+          onDiagramUpdate={handleDiagramUpdate}
         />
       </div>
     </ResizeObserverComponent>
