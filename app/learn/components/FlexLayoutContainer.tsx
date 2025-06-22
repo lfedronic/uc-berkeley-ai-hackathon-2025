@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
-import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react';
+import { Layout, Model, TabNode, IJsonModel, Actions, DockLocation } from 'flexlayout-react';
 import 'flexlayout-react/style/light.css';
 import ResizeObserverComponent from './ResizeObserver';
 
-// Initial layout configuration - starts empty, tabs added dynamically via chat
+// Initial layout configuration - starts with a welcome tab, more tabs added dynamically via chat
 const initialModel: IJsonModel = {
   global: {
     tabEnableClose: true,
@@ -22,7 +22,18 @@ const initialModel: IJsonModel = {
         type: 'tabset',
         weight: 100,
         id: 'main-tabset',
-        children: []
+        children: [
+          {
+            type: 'tab',
+            id: 'welcome-tab',
+            name: 'Welcome',
+            component: 'content',
+            config: { 
+              contentType: 'welcome',
+              bgColor: 'bg-blue-50'
+            }
+          }
+        ]
       }
     ]
   }
@@ -30,6 +41,8 @@ const initialModel: IJsonModel = {
 
 import Summary from '@/components/Summary';
 import Quiz from '@/components/Quiz';
+import ChatPopup from '@/components/ChatPopup';
+import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 
 // Content component that renders different types based on config
 const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
@@ -70,6 +83,8 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
   
   const getPlaceholderText = (type: string) => {
     switch (type) {
+      case 'welcome':
+        return 'Welcome to the AI Learning Platform!\n\nUse the chat popup in the bottom-right corner to generate:\n\n• Concept summaries and lesson plans\n• Interactive quizzes and assessments\n• Course overviews and curricula\n\nEach piece of content will appear as a new draggable tab that you can arrange however you like.';
       case 'lecture':
         return 'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.';
       case 'quiz':
@@ -114,6 +129,104 @@ const FlexLayoutContainer: React.FC = () => {
     
     console.log('✅ FlexLayout initialized as single source of truth');
   }, []);
+
+  // Handler for when summary content is generated (same logic as test-chat)
+  const handleLessonUpdate = (content: string) => {
+    console.log('🔥 handleLessonUpdate called with content length:', content.length);
+    console.log('🔥 Model available:', !!model);
+    
+    if (!model) {
+      console.error('❌ No model available for adding tab');
+      return;
+    }
+    
+    console.log('📝 Creating summary tab with content:', content.substring(0, 100) + '...');
+    
+    // Extract title from content (first line or first heading)
+    const lines = content.split('\n');
+    const titleLine = lines.find(line => line.trim().startsWith('#')) || lines[0];
+    const title = titleLine?.replace(/^#+\s*/, '').trim() || 'Summary';
+    
+    console.log('📝 Extracted title:', title);
+    
+    // Create a unique tab ID
+    const tabId = `tab-${Date.now()}`;
+    
+    try {
+      // Add a new tab with the summary content using FlexLayout Actions
+      const action = Actions.addNode(
+        {
+          type: 'tab',
+          id: tabId,
+          name: title,
+          component: 'content',
+          config: {
+            contentType: 'summary',
+            data: {
+              content,
+              title,
+              topic: title,
+              type: 'summary'
+            }
+          }
+        },
+        'main-tabset',
+        DockLocation.CENTER,
+        -1, // Add to the end (rightmost position)
+        true // make active
+      );
+      
+      console.log('📝 Created action:', action);
+      model.doAction(action);
+      console.log(`✅ Added summary tab: ${title}`);
+    } catch (error) {
+      console.error('❌ Error adding summary tab:', error);
+    }
+  };
+
+  // Handler for when quiz content is generated (same logic as test-chat)
+  const handleQuizUpdate = (quiz: GeneratedQuiz) => {
+    console.log('🔥 handleQuizUpdate called with quiz:', quiz.title);
+    console.log('🔥 Model available:', !!model);
+    
+    if (!model) {
+      console.error('❌ No model available for adding quiz tab');
+      return;
+    }
+    
+    console.log('🧠 Creating quiz tab:', quiz.title);
+    
+    // Create a unique tab ID
+    const tabId = `tab-${Date.now()}`;
+    
+    try {
+      // Add a new tab with the quiz content using FlexLayout Actions
+      const action = Actions.addNode(
+        {
+          type: 'tab',
+          id: tabId,
+          name: quiz.title,
+          component: 'content',
+          config: {
+            contentType: 'quiz',
+            data: {
+              quiz
+            }
+          }
+        },
+        'main-tabset',
+        DockLocation.CENTER,
+        -1, // Add to the end (rightmost position)
+        true // make active
+      );
+      
+      console.log('🧠 Created action:', action);
+      model.doAction(action);
+      console.log(`✅ Added quiz tab: ${quiz.title}`);
+    } catch (error) {
+      console.error('❌ Error adding quiz tab:', error);
+    }
+  };
 
   const factory = (node: TabNode) => {
     const component = node.getComponent();
@@ -175,6 +288,12 @@ const FlexLayoutContainer: React.FC = () => {
             onModelChange={onModelChange}
           />
         </div>
+        
+        {/* Chat Popup for generating content - same as test-chat but creates tabs */}
+        <ChatPopup 
+          onLessonUpdate={handleLessonUpdate}
+          onQuizUpdate={handleQuizUpdate}
+        />
       </div>
     </ResizeObserverComponent>
   );
