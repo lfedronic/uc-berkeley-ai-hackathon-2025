@@ -1,10 +1,85 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
-import { Layout, Model, TabNode } from 'flexlayout-react';
+import React, { useEffect } from 'react';
+import { Layout, Model, TabNode, IJsonModel } from 'flexlayout-react';
 import 'flexlayout-react/style/light.css';
 import ResizeObserverComponent from './ResizeObserver';
-import { useLayoutStore, layoutNodeToFlexLayout, flexLayoutToLayoutNode } from '@/lib/agents/layoutAgent';
+
+// Initial layout configuration - hard-coded 2x2 grid as per M-0 milestone
+const initialModel: IJsonModel = {
+  global: {
+    tabEnableClose: true,
+    tabEnableRename: false,
+    borderSize: 25,
+  },
+  borders: [],
+  layout: {
+    type: 'row',
+    weight: 100,
+    children: [
+      {
+        type: 'column',
+        weight: 50,
+        children: [
+          {
+            type: 'tabset',
+            weight: 50,
+            children: [
+              {
+                type: 'tab',
+                name: 'Lecture Notes',
+                component: 'content',
+                config: { contentType: 'lecture', bgColor: 'bg-blue-100' }
+              }
+            ]
+          },
+          {
+            type: 'tabset',
+            weight: 50,
+            children: [
+              {
+                type: 'tab',
+                name: 'Quiz',
+                component: 'content',
+                config: { contentType: 'quiz', bgColor: 'bg-green-100' }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        type: 'column',
+        weight: 50,
+        children: [
+          {
+            type: 'tabset',
+            weight: 50,
+            children: [
+              {
+                type: 'tab',
+                name: 'Diagram',
+                component: 'content',
+                config: { contentType: 'diagram', bgColor: 'bg-purple-100' }
+              }
+            ]
+          },
+          {
+            type: 'tabset',
+            weight: 50,
+            children: [
+              {
+                type: 'tab',
+                name: 'Summary',
+                component: 'content',
+                config: { contentType: 'summary', bgColor: 'bg-yellow-100' }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+};
 
 // Placeholder content component
 const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
@@ -44,36 +119,12 @@ const PlaceholderContent: React.FC<{ node: TabNode }> = ({ node }) => {
 
 const FlexLayoutContainer: React.FC = () => {
   const [model, setModel] = React.useState<Model | null>(null);
-  const { layout, updateLayout } = useLayoutStore();
-  const isUpdatingFromZustand = useRef(false);
 
-  // Initialize FlexLayout model from Zustand store
   useEffect(() => {
-    const flexLayoutModel = layoutNodeToFlexLayout(layout);
-    const newModel = Model.fromJson(flexLayoutModel);
+    // Initialize the FlexLayout model from Zustand store
+    const newModel = Model.fromJson(initialModel);
     setModel(newModel);
   }, []);
-
-  // Sync Zustand changes to FlexLayout (Zustand → FlexLayout)
-  useEffect(() => {
-    if (!model) return;
-    
-    const unsubscribe = useLayoutStore.subscribe((state) => {
-      if (isUpdatingFromZustand.current) return; // Prevent sync loops
-      
-      console.log('Zustand layout changed, updating FlexLayout:', state.layout);
-      const flexLayoutModel = layoutNodeToFlexLayout(state.layout);
-      const newModel = Model.fromJson(flexLayoutModel);
-      
-      isUpdatingFromZustand.current = true;
-      setModel(newModel);
-      setTimeout(() => {
-        isUpdatingFromZustand.current = false;
-      }, 0);
-    });
-
-    return unsubscribe;
-  }, [model]);
 
   const factory = (node: TabNode) => {
     const component = node.getComponent();
@@ -97,18 +148,12 @@ const FlexLayoutContainer: React.FC = () => {
   };
 
   const onModelChange = (newModel: Model) => {
-    if (isUpdatingFromZustand.current) return; // Prevent sync loops
-    
-    // Handle user-initiated layout changes and sync with Zustand store (FlexLayout → Zustand)
-    console.log('FlexLayout changed by user, updating Zustand:', newModel.toJson());
+    // Handle user-initiated layout changes and sync with Zustand store
+    console.log('Layout changed:', newModel.toJson());
     setModel(newModel);
     
-    try {
-      const layoutNode = flexLayoutToLayoutNode(newModel.toJson());
-      updateLayout(layoutNode);
-    } catch (error) {
-      console.error('Error converting FlexLayout to LayoutNode:', error);
-    }
+    // TODO: Convert FlexLayout model to our LayoutNode format and update store
+    // This will be implemented in Phase 5 (M-4)
   };
 
   if (!model) {

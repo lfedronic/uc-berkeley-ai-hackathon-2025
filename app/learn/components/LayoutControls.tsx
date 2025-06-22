@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { layoutTool } from '@/lib/agents/layoutAgent';
+import { layoutTool} from '@/lib/agents/layoutAgent';
 
 const LayoutControls: React.FC = () => {
   const [selectedTool, setSelectedTool] = useState('');
@@ -9,6 +9,7 @@ const LayoutControls: React.FC = () => {
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  
 
   const tools = [
     { value: 'split', label: 'Split Pane', params: ['targetId', 'orientation', 'ratio'] },
@@ -47,13 +48,13 @@ const LayoutControls: React.FC = () => {
       };
 
       console.log('Executing tool with params:', toolParams);
-      // Call the tool's execute function directly
+      // Call the tool function directly since it's a Vercel AI SDK tool
       const result = await layoutTool.execute(toolParams, {
-        toolCallId: 'direct-call',
+        toolCallId: 'test-call',
         messages: []
       });
       
-      if (result.error) {
+      if (result && typeof result === 'object' && 'error' in result) {
         setError(`${result.error}: ${result.message}`);
       } else {
         setResult(JSON.stringify(result, null, 2));
@@ -208,8 +209,8 @@ const LayoutControls: React.FC = () => {
         </div>
 
         <div className="text-xs text-gray-500">
-          <p><strong>Status:</strong> ✅ Bidirectional sync implemented! Tools now update both Zustand store and FlexLayout UI</p>
-          <p><strong>Test:</strong> Try adding a tab or activating a different tab to see real-time synchronization</p>
+          <p><strong>Note:</strong> Tools update Zustand store but FlexLayout UI doesnt sync yet</p>
+          <p><strong>Issue:</strong> The FlexLayout IDs (with #) are different from our Zustand IDs</p>
         </div>
       </div>
     </div>

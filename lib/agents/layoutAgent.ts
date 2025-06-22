@@ -3,7 +3,6 @@ import { generateText, tool } from 'ai';
 import { z } from 'zod';
 import { create } from 'zustand';
 import mitt from 'mitt';
-import { IJsonModel } from 'flexlayout-react';
 
 const google = createGoogleGenerativeAI({
   apiKey: process.env.GOOGLE_API_KEY!,
@@ -218,84 +217,6 @@ export const useLayoutStore = create<LayoutState & {
     });
   }
 }));
-
-// ============================================================================
-// Bidirectional Conversion Functions (FlexLayout ↔ LayoutNode)
-// ============================================================================
-
-export function layoutNodeToFlexLayout(layout: LayoutNode): IJsonModel {
-  function convertNode(node: LayoutNode): Record<string, unknown> {
-    if (node.type === 'tabset') {
-      return {
-        type: 'tabset',
-        id: node.id,
-        weight: node.weight || 50,
-        children: node.tabs?.map(tab => ({
-          type: 'tab',
-          id: tab.id,
-          name: tab.title,
-          component: 'content',
-          config: tab.config || { contentType: tab.contentId, bgColor: 'bg-gray-100' }
-        })) || [],
-        active: node.activeTabId ? node.tabs?.findIndex(tab => tab.id === node.activeTabId) || 0 : 0
-      };
-    } else {
-      // Split node (row/column)
-      return {
-        type: node.type,
-        id: node.id,
-        weight: node.weight || 50,
-        children: node.children?.map(child => convertNode(child)) || []
-      };
-    }
-  }
-
-  return {
-    global: {
-      tabEnableClose: true,
-      tabEnableRename: false,
-      borderSize: 25,
-    },
-    borders: [],
-    layout: convertNode(layout) as unknown as IJsonModel['layout']
-  };
-}
-
-export function flexLayoutToLayoutNode(flexModel: IJsonModel): LayoutNode {
-  function convertNode(flexNode: Record<string, unknown>): LayoutNode {
-    if (flexNode.type === 'tabset') {
-      const children = flexNode.children as Array<Record<string, unknown>>;
-      const tabs: Tab[] = children?.map((tabNode) => ({
-        id: tabNode.id as string,
-        title: tabNode.name as string,
-        contentId: (tabNode.config as Record<string, unknown>)?.contentType as string || 'default',
-        config: tabNode.config as Record<string, unknown>
-      })) || [];
-
-      const activeTabIndex = (flexNode.active as number) || 0;
-      const activeTabId = tabs[activeTabIndex]?.id;
-
-      return {
-        id: flexNode.id as string,
-        type: 'tabset',
-        weight: flexNode.weight as number,
-        tabs,
-        activeTabId
-      };
-    } else {
-      // Split node (row/column)
-      const children = flexNode.children as Array<Record<string, unknown>>;
-      return {
-        id: flexNode.id as string,
-        type: flexNode.type as 'row' | 'column',
-        weight: flexNode.weight as number,
-        children: children?.map((child) => convertNode(child)) || []
-      };
-    }
-  }
-
-  return convertNode(flexModel.layout as unknown as Record<string, unknown>);
-}
 
 // ============================================================================
 // Layout Validation & Guards
