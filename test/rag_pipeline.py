@@ -12,18 +12,19 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import subprocess
 import re
+from openai import OpenAI
 
 
 load_dotenv()  # loads from .env by default
 
 google_key = os.getenv("GOOGLE_KEY")
-open_ai_key = os.getenv("OPENAPI_KEY")
+open_ai_key = os.getenv("OPENAI_KEY")
 
 # === CONFIG ===
 DOC_DIR = "manim_docs_old"  # folder of .html pages downloaded with wget
-RAW_CHUNKS_FILE = "manim_doc_chunks.jsonl"
-SPLIT_CHUNKS_FILE = "split_manim_chunks.jsonl"
-VECTORSTORE_PATH = "manim_vectorstore_free"
+RAW_CHUNKS_FILE = "test/temp/manim_doc_chunks.jsonl"
+SPLIT_CHUNKS_FILE = "test/temp/split_manim_chunks.jsonl"
+VECTORSTORE_PATH = "test/temp/manim_vectorstore_free"
 OUTPUT_FILE = "test/generated_animation.py"
 OLLAMA_MODEL = "deepseek-coder"
 USER_QUERY = "What is bubble sort?"
@@ -78,6 +79,8 @@ def extract_main_content(folder_path):
 
 if not os.path.exists(RAW_CHUNKS_FILE):
     chunks = extract_main_content(DOC_DIR)
+    # Ensure directory exists for RAW_CHUNKS_FILE
+    os.makedirs(os.path.dirname(RAW_CHUNKS_FILE), exist_ok=True)
     with open(RAW_CHUNKS_FILE, "w", encoding="utf-8") as f:
         for chunk in chunks:
             json.dump(chunk, f)
@@ -92,6 +95,8 @@ docs = [Document(page_content=chunk["text"], metadata={"source": chunk["source"]
 splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
 split_docs = splitter.split_documents(docs)
 
+# Ensure directory exists for SPLIT_CHUNKS_FILE
+os.makedirs(os.path.dirname(SPLIT_CHUNKS_FILE), exist_ok=True)
 with open(SPLIT_CHUNKS_FILE, "w", encoding="utf-8") as f:
     for doc in split_docs:
         json.dump({"text": doc.page_content, "metadata": doc.metadata}, f)
@@ -152,12 +157,33 @@ Return only the full Python code. Do not explain anything.
 
 """
 
+modelfamily_used = "openai"
+#model = "gemini-2.5-flash-lite-preview-06-17"
+#response = client.models.generate_content(
+#    model=model, contents=prompt
+#)
+#code = response.text
 
-model = "gemini-2.5-flash-lite-preview-06-17"
-response = client.models.generate_content(
-    model=model, contents=prompt
+# Alternative: Use OpenAI/ChatGPT for the second prompt (o3 model has lucas suggested)
+oa_client = OpenAI(api_key=open_ai_key)
+# Uncomment the lines below to use OpenAI instead of Gemini for the second prompt
+response = oa_client.responses.create(
+    model="gpt-4o",
+    input=[
+        {
+        "role": "user",
+        "content": [
+            {
+            "type": "input_text",
+            "text": prompt
+            }
+        ]
+        }
+    ]
 )
-code = response.text
+
+code = response.choices[0].message.content
+print(code)
 # clean the response because the model keeps adding backtick/latex/md syntax for returning code blocks
 code = code.replace("```python", "")
 code = code.replace("```", "")
@@ -173,8 +199,10 @@ response = requests.post("http://localhost:11434/api/generate", json={
 code = response.json()["response"]
 """
 # === STEP 7: Save code ===
-file_name = "_".join(USER_QUERY.split(" ")[:5])
-with open(f'test/{file_name}.py', "w") as f:
+file_name = f'test/generated_animation_code/{modelfamily_used}/{"_".join(USER_QUERY.split(" ")[:5])}.py'
+# Ensure directory exists for the output file
+os.makedirs(os.path.dirname(file_name), exist_ok=True)
+with open(file_name, "w") as f:
     f.write(code)
 
 print(f"✅ Manim animation code saved to: {file_name}")
@@ -183,7 +211,6 @@ print(f"✅ Manim animation code saved to: {file_name}")
 # === STEP 8: Optionally, run
 # Example: python3 -m manim -pql test/Whats_the_x-y_plane?_How.py CartesianPlanePlotting
 
-output_file = f'test/{file_name}.py'
 class_name = None
 
 # Try to extract the first class name from the generated code
@@ -195,7 +222,7 @@ else:
 
 if class_name:
     cmd = [
-        "python3", "-m", "manim", "-pql", output_file, class_name, "-c MANIM_CONFIG"
+        "python3", "-m", "manim", "-pql", file_name, class_name, "-c MANIM_CONFIG"
     ]
     print(f"Running: {' '.join(cmd)}")
     subprocess.run(cmd)
