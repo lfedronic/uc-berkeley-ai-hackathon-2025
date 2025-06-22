@@ -42,9 +42,11 @@ const initialModel: IJsonModel = {
 import Summary from '@/components/Summary';
 import Quiz from '@/components/Quiz';
 import Diagram from '@/components/Diagram';
+import Webpage from '@/components/Webpage';
 import ChatPopup from '@/components/ChatPopup';
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 import { GeneratedDiagram } from '@/lib/agents/diagramAgent';
+import { GeneratedWebpage } from '@/lib/agents/webpageAgent';
 
 // Content component that renders different types based on config
 const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
@@ -88,6 +90,16 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
         );
       }
       break;
+      
+    case 'webpage':
+      if (data?.webpage) {
+        return (
+          <Webpage
+            webpage={data.webpage}
+          />
+        );
+      }
+      break;
   }
   
   // Fallback placeholder content
@@ -96,7 +108,7 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
   const getPlaceholderText = (type: string) => {
     switch (type) {
       case 'welcome':
-        return 'Welcome to the AI Learning Platform!\n\nUse the chat popup in the bottom-right corner to generate:\n\n• Concept summaries and lesson plans\n• Interactive quizzes and assessments\n• Visual diagrams and flowcharts\n• Course overviews and curricula\n\nEach piece of content will appear as a new draggable tab that you can arrange however you like.';
+        return 'Welcome to the AI Learning Platform!\n\nUse the chat popup in the bottom-right corner to generate:\n\n• Concept summaries and lesson plans\n• Interactive quizzes and assessments\n• Visual diagrams and flowcharts\n• Interactive demos and simulations\n• Python visualizations and charts\n• Custom educational webpages\n• Course overviews and curricula\n\nEach piece of content will appear as a new draggable tab that you can arrange however you like.\n\nTry asking for: "Create an interactive demo of sorting algorithms" or "Build a physics simulation for projectile motion"!';
       case 'lecture':
         return 'Lecture Notes Content\n\nThis pane would contain lecture slides, PDFs, or educational content.';
       case 'quiz':
@@ -105,6 +117,8 @@ const DynamicContent: React.FC<{ node: TabNode }> = ({ node }) => {
         return 'Diagram Content\n\nUse the chat to generate a visual diagram and it will appear here.';
       case 'summary':
         return 'Summary Content\n\nUse the chat to generate a summary and it will appear here.';
+      case 'webpage':
+        return 'Interactive Content\n\nUse the chat to generate custom webpages, simulations, or Python visualizations and they will appear here.';
       default:
         return 'Default Content\n\nPlaceholder content for this pane.';
     }
@@ -240,6 +254,50 @@ const FlexLayoutContainer: React.FC = () => {
     }
   };
 
+  // Handler for when webpage content is generated
+  const handleWebpageUpdate = (webpage: GeneratedWebpage) => {
+    console.log('🔥 handleWebpageUpdate called with webpage:', webpage.title);
+    console.log('🔥 Model available:', !!model);
+    
+    if (!model) {
+      console.error('❌ No model available for adding webpage tab');
+      return;
+    }
+    
+    console.log('🌐 Creating webpage tab:', webpage.title);
+    
+    // Create a unique tab ID
+    const tabId = `tab-${Date.now()}`;
+    
+    try {
+      // Add a new tab with the webpage content using FlexLayout Actions
+      const action = Actions.addNode(
+        {
+          type: 'tab',
+          id: tabId,
+          name: webpage.title,
+          component: 'content',
+          config: {
+            contentType: 'webpage',
+            data: {
+              webpage
+            }
+          }
+        },
+        'main-tabset',
+        DockLocation.CENTER,
+        -1, // Add to the end (rightmost position)
+        true // make active
+      );
+      
+      console.log('🌐 Created action:', action);
+      model.doAction(action);
+      console.log(`✅ Added webpage tab: ${webpage.title}`);
+    } catch (error) {
+      console.error('❌ Error adding webpage tab:', error);
+    }
+  };
+
   // Handler for when diagram content is generated
   const handleDiagramUpdate = (diagram: GeneratedDiagram) => {
     console.log('🔥 handleDiagramUpdate called with diagram:', diagram.title);
@@ -350,6 +408,7 @@ const FlexLayoutContainer: React.FC = () => {
           onLessonUpdate={handleLessonUpdate}
           onQuizUpdate={handleQuizUpdate}
           onDiagramUpdate={handleDiagramUpdate}
+          onWebpageUpdate={handleWebpageUpdate}
         />
       </div>
     </ResizeObserverComponent>

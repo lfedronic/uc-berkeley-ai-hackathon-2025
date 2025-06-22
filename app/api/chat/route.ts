@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { generateSummary } from '@/lib/agents/summaryAgent';
 import { generateQuiz } from '@/lib/agents/quizAgent';
 import { generateDiagram } from '@/lib/agents/diagramAgent';
+import { generateWebpage } from '@/lib/agents/webpageAgent';
 
 // Initialize the Google AI provider
 const google = createGoogleGenerativeAI({
@@ -100,6 +101,37 @@ const tools = {
       }
     },
   }),
+  generateWebpage: tool({
+    description: 'Generate custom interactive webpages, simulations, or Python visualizations for educational concepts that need unique interactive demonstrations',
+    parameters: z.object({
+      concept: z.string().describe('The concept, topic, or subject to create an interactive demonstration for'),
+      type: z.enum(['interactive-html', 'python-chart', 'simulation', 'auto']).optional().describe('Type of content: interactive-html (web simulations), python-chart (data visualizations), simulation (educational demos), or auto (let AI choose)'),
+      complexity: z.enum(['simple', 'detailed', 'comprehensive']).optional().describe('Complexity level: simple (basic demo), detailed (multiple features), comprehensive (full experience)'),
+      framework: z.enum(['vanilla-js', 'react', 'matplotlib', 'plotly', 'auto']).optional().describe('Framework preference: vanilla-js (pure HTML/JS), react (React components), matplotlib (Python plots), plotly (interactive charts), or auto'),
+    }),
+    execute: async ({ concept, type, complexity, framework }) => {
+      try {
+        const webpage = await generateWebpage({
+          concept,
+          type,
+          complexity,
+          framework,
+        });
+        return { 
+          success: true,
+          webpage: webpage,
+          concept: concept,
+          contentType: 'webpage'
+        };
+      } catch (error) {
+        return { 
+          success: false, 
+          error: 'Failed to generate webpage',
+          details: error instanceof Error ? error.message : 'Unknown error'
+        };
+      }
+    },
+  }),
 };
 
 export async function POST(req: Request) {
@@ -125,14 +157,23 @@ export async function POST(req: Request) {
         * Assessment materials
         Examples: "Create a quiz on calculus", "Generate practice problems for chemistry", "Make a test for JavaScript basics"
         
-      - generateDiagram: Use this tool when users ask for:
+              - generateDiagram: Use this tool when users ask for:
         * Visual explanations of concepts or processes
         * Diagrams to understand relationships or workflows
         * Mind maps, flowcharts, or other visual aids
         * Help visualizing complex topics
         Examples: "Show me a diagram of photosynthesis", "Create a flowchart for the software development process", "I need a mind map for project management concepts", "Visualize how neural networks work"
         
-      Choose the appropriate tool based on what the user is requesting. Summary content will be displayed as formatted markdown, quizzes will be displayed as interactive forms where users can answer questions and get scored, and diagrams will be rendered as interactive Mermaid visualizations.`,
+        - generateWebpage: Use this tool when users ask for:
+        * Interactive simulations or demonstrations
+        * Custom educational webpages with hands-on activities
+        * Python data visualizations or scientific plots
+        * Educational games or interactive calculators
+        * Physics simulations, chemistry models, or math visualizations
+        * Any unique educational experience that requires custom code
+        Examples: "Create an interactive simulation of planetary motion", "Build a calculator for compound interest", "Make a Python chart showing statistical distributions", "Create an interactive periodic table", "Build a physics simulation for pendulum motion"
+        
+      Choose the appropriate tool based on what the user is requesting. Summary content will be displayed as formatted markdown, quizzes will be displayed as interactive forms where users can answer questions and get scored, diagrams will be rendered as interactive Mermaid visualizations, and webpages will be displayed as interactive content with both preview and code views.`,
     });
 
     return result.toDataStreamResponse();

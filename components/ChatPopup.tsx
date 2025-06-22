@@ -6,14 +6,16 @@ import { X, MessageCircle } from 'lucide-react';
 
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 import { GeneratedDiagram } from '@/lib/agents/diagramAgent';
+import { GeneratedWebpage } from '@/lib/agents/webpageAgent';
 
 interface ChatPopupProps {
   onLessonUpdate?: (content: string) => void;
   onQuizUpdate?: (quiz: GeneratedQuiz) => void;
   onDiagramUpdate?: (diagram: GeneratedDiagram) => void;
+  onWebpageUpdate?: (webpage: GeneratedWebpage) => void;
 }
 
-export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdate }: ChatPopupProps) {
+export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdate, onWebpageUpdate }: ChatPopupProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
     api: '/api/chat',
@@ -51,6 +53,18 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdat
         const tool = diagramResults[0];
         if (tool.state === 'result' && tool.result?.success && tool.result?.diagram) {
           onDiagramUpdate?.(tool.result.diagram);
+        }
+      }
+
+      // Check for webpage results
+      const webpageResults = message.toolInvocations?.filter(
+        (tool) => tool.state === 'result' && tool.toolName === 'generateWebpage'
+      );
+      
+      if (webpageResults && webpageResults.length > 0) {
+        const tool = webpageResults[0];
+        if (tool.state === 'result' && tool.result?.success && tool.result?.webpage) {
+          onWebpageUpdate?.(tool.result.webpage);
         }
       }
     },
@@ -94,7 +108,9 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdat
                   <p>• &quot;Create a lesson plan for basic algebra&quot;</p>
                   <p>• &quot;Generate a quiz on JavaScript fundamentals&quot;</p>
                   <p>• &quot;Show me a diagram of the water cycle&quot;</p>
-                  <p>• &quot;Create a flowchart for software development&quot;</p>
+                  <p>• &quot;Create an interactive demo of context switching&quot;</p>
+                  <p>• &quot;Build a physics simulation for pendulum motion&quot;</p>
+                  <p>• &quot;Make a Python chart showing data distributions&quot;</p>
                 </div>
               </div>
             )}
@@ -163,6 +179,21 @@ export default function ChatPopup({ onLessonUpdate, onQuizUpdate, onDiagramUpdat
                           {tool.state === 'call' && tool.toolName === 'generateDiagram' && (
                             <div className="text-orange-600">
                               🔄 Creating diagram for {tool.args?.concept}...
+                            </div>
+                          )}
+                          {tool.state === 'result' && tool.toolName === 'generateWebpage' && (
+                            <div className="text-green-600">
+                              ✓ Generated interactive demo for &quot;{tool.result?.concept}&quot;
+                              {tool.result?.success && (
+                                <div className="text-blue-600 mt-1">
+                                  Interactive content created as new tab!
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {tool.state === 'call' && tool.toolName === 'generateWebpage' && (
+                            <div className="text-orange-600">
+                              🔄 Building interactive demo for {tool.args?.concept}...
                             </div>
                           )}
                         </div>
