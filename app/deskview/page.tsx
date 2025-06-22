@@ -133,7 +133,7 @@ export default function DeskViewPage() {
       setIsCapturing(false);
     } else {
       takeScreenshot(); // Take one immediately
-      const interval = setInterval(takeScreenshot, 5000);
+      const interval = setInterval(takeScreenshot, 10000);
       setAutoCaptureInterval(interval);
     }
   }
