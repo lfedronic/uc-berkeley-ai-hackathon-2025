@@ -43,7 +43,7 @@ import Summary from '@/components/Summary';
 import Quiz from '@/components/Quiz';
 import Diagram from '@/components/Diagram';
 import Webpage from '@/components/Webpage';
-import ChatPopup from '@/components/ChatPopup';
+import VoiceChatAgent from '@/components/VoiceChatAgent';
 import { GeneratedQuiz } from '@/lib/agents/quizAgent';
 import { GeneratedDiagram } from '@/lib/agents/diagramAgent';
 import { GeneratedWebpage } from '@/lib/agents/webpageAgent';
@@ -403,8 +403,8 @@ const FlexLayoutContainer: React.FC = () => {
           />
         </div>
         
-        {/* Chat Popup for generating content - same as test-chat but creates tabs */}
-        <ChatPopup 
+        {/* Voice Chat Agent for generating content - replaces text chat with voice */}
+        <VoiceChatAgent 
           onLessonUpdate={handleLessonUpdate}
           onQuizUpdate={handleQuizUpdate}
           onDiagramUpdate={handleDiagramUpdate}
