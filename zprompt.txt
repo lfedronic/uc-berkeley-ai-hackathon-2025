@@ -1,0 +1,134 @@
+
+Write a Manim animation that visually explains Bubble Sort step by step. Show the array as rectangles, animate every comparison and swap, use color to highlight, and add labels. The code must be at least 50 lines. Use only these Manim classes, constants, and methods: {
+  "classes": [
+    "Scene",
+    "MovingCameraScene",
+    "Rectangle",
+    "Text",
+    "VGroup"
+  ],
+  "constants": [
+    "UP",
+    "DOWN",
+    "LEFT",
+    "RIGHT",
+    "ORIGIN",
+    "WHITE",
+    "BLACK",
+    "RED",
+    "GREEN",
+    "BLUE",
+    "YELLOW",
+    "PURPLE",
+    "ORANGE"
+  ],
+  "methods": [
+    "add",
+    "remove",
+    "play",
+    "wait",
+    "create",
+    "fade_in",
+    "fade_out",
+    "move_to",
+    "shift",
+    "scale",
+    "rotate",
+    "Transform",
+    "FadeIn",
+    "FadeOut",
+    "Indicate"
+  ]
+}
+
+Here is some relevant documentation:
+Transforms a mobject to the mobject stored in its
+target
+attribute.
+ReplacementTransform
+Replaces and morphs a mobject into a target mobject.
+Restore
+Transforms a mobject to its last saved state.
+ScaleInPlace
+Animation that scales a mobject by a certain factor.
+ShrinkToCenter
+Animation that makes a mobject shrink to center.
+Swap
+Transform
+A Transform transforms a Mobject into a target Mobject.
+TransformAnimations
+TransformFromCopy
+Performs a reversed Transform
+
+movement
+ComplexHomotopy
+Homotopy
+MoveAlongPath
+PhaseFlow
+SmoothedVectorizedHomotopy
+numbers
+ChangeDecimalToValue
+ChangingDecimal
+rotation
+Rotate
+Rotating
+specialized
+Broadcast
+speedmodifier
+ChangeSpeed
+transform
+ApplyComplexFunction
+ApplyFunction
+ApplyMatrix
+ApplyMethod
+ApplyPointwiseFunction
+ApplyPointwiseFunctionToCenter
+ClockwiseTransform
+CounterclockwiseTransform
+CyclicReplace
+FadeToColor
+FadeTransform
+FadeTransformPieces
+MoveToTarget
+ReplacementTransform
+Restore
+ScaleInPlace
+ShrinkToCenter
+Swap
+Transform
+TransformAnimations
+TransformFromCopy
+transform_matching_parts
+TransformMatchingAbstractBase
+TransformMatchingShapes
+TransformMatchingTex
+updaters
+Modules
+Cameras
+camera
+BackgroundColoredVMobjectDisplayer
+Camera
+mapping_camera
+MappingCamera
+OldMultiCamera
+SplitScreenCamera
+moving_camera
+MovingCamera
+multi_camera
+MultiCamera
+three_d_camera
+ThreeDCamera
+Configuration
+Module Index
+_config
+utils
+logger_utils
+Mobjects
+frame
+FullScreenRectangle
+ScreenRectangle
+geometry
+Modules
+graph
+
+Return only the full Python code. Do not explain anything. Do not use markdown or backticks.

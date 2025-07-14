@@ -12,28 +12,31 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 import subprocess
 import re
-import sys
 from openai import OpenAI
-import datetime
+import sys
 
+# Load environment variables
+load_dotenv()
 
-load_dotenv()  # loads from .env by default
-
-google_key = os.getenv("GOOGLE_API_KEY")  # Fixed environment variable name
-open_ai_key = os.getenv("OPENAI_API_KEY")  # Fixed environment variable name
+# Get API keys
+google_key = os.getenv("GOOGLE_API_KEY")
+open_ai_key = os.getenv("OPENAI_API_KEY")
 
 # === CONFIG ===
-DOC_DIR = "manim_docs_old"  # folder of .html pages downloaded with wget
+DOC_DIR = "manim_docs_old"
 RAW_CHUNKS_FILE = "test/temp/manim_doc_chunks.jsonl"
-SPLIT_CHUNKS_FILE = "test/temp/split_manim_chunks.jsonl"
 VECTORSTORE_PATH = "test/temp/manim_vectorstore_free"
 OUTPUT_FILE = "test/generated_animation.py"
 
-    # Parse command line arguments
+# Parse command line arguments
 if len(sys.argv) > 1:
     USER_QUERY = sys.argv[1]
 else:
-    USER_QUERY = "What is merge sort?" # Default fallback
+    USER_QUERY = "What is merge sort?"  # Default fallback
+
+print(f"🎬 Generating animation for: {USER_QUERY}")
+
+ # Default fallback
 
 def extract_clean_text_from_html(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -178,8 +181,7 @@ try:
         f.write(code)
     print("✅ Successfully generated animation code")
 except Exception as e:
-    timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    error_msg = f"[{timestamp}] ❌ Error generating code: {e}\n"
+    error_msg = f"❌ Error generating code: {e}\n"
     error_msg += response.text if 'response' in locals() and response.text else "<No output>"
     with open("zllm_output.txt", "w") as f:
         f.write(error_msg)

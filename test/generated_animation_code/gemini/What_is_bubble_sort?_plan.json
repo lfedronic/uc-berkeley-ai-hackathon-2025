@@ -1,0 +1,99 @@
+```json
+[
+  {
+    "action": "create",
+    "target": "title",
+    "parameters": {
+      "class": "Text",
+      "text": "What is Bubble Sort?",
+      "color": "WHITE"
+    }
+  },
+  {
+    "action": "play",
+    "target": "title",
+    "parameters": {
+      "animation": "fade_in",
+      "run_time": 1
+    }
+  },
+  {
+    "action": "wait",
+    "target": null,
+    "parameters": {
+      "duration": 1
+    }
+  },
+  {
+    "action": "create",
+    "target": "definition",
+    "parameters": {
+      "class": "Text",
+      "text": "Bubble Sort: Repeatedly steps through the list,",
+      "color": "WHITE"
+    }
+  },
+  {
+    "action": "play",
+    "target": "definition",
+    "parameters": {
+      "animation": "fade_in",
+      "run_time": 1
+    }
+  },
+  {
+    "action": "create",
+    "target": "definition2",
+    "parameters": {
+      "class": "Text",
+      "text": "compares adjacent elements and swaps them",
+      "color": "WHITE"
+    }
+  },
+  {
+    "action": "play",
+    "target": "definition2",
+    "parameters": {
+      "animation": "fade_in",
+      "run_time": 1
+    }
+  },
+  {
+    "action": "create",
+    "target": "definition3",
+    "parameters": {
+      "class": "Text",
+      "text": "if they are in the wrong order.",
+      "color": "WHITE"
+    }
+  },
+  {
+    "action": "play",
+    "target": "definition3",
+    "parameters": {
+      "animation": "fade_in",
+      "run_time": 1
+    }
+  },
+  {
+    "action": "wait",
+    "target": null,
+    "parameters": {
+      "duration": 2
+    }
+  },
+  {
+    "action": "play",
+    "target": [
+      "title",
+      "definition",
+      "definition2",
+      "definition3"
+    ],
+    "parameters": {
+      "animation": "fade_out",
+      "run_time": 1
+    }
+  }
+]
+```

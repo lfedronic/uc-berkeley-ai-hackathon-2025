@@ -234,11 +234,6 @@ export default function AnimationPage() {
                     <>
                       <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
                         <p className="text-green-800 font-medium">✅ Animation Generated Successfully</p>
-                        {result.executionTime && (
-                          <p className="text-sm text-green-600">
-                            Generated in {result.executionTime}ms
-                          </p>
-                        )}
                       </div>
 
                       {result.className && (
